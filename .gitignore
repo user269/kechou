@@ -9,6 +9,9 @@ android/.keystore-pass
 *.jks
 *.keystore
 
+# GitHub token（发布脚本用）
+.gh-token
+
 # 安装包
 *.apk
 

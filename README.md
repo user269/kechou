@@ -51,6 +51,7 @@
 ├── icon-192.png        # PWA 图标
 ├── icon-512.png
 ├── release.sh          # 发版脚本：打资源包 / 整包，生成 update.json
+├── publish.sh          # 把产物传到 GitHub Release（需 token）
 ├── update.json         # 更新清单，客户端从 raw 直链读这个文件
 ├── dist/               # 发版产物（zip/apk 传 Release，不进仓库）
 └── android/
@@ -149,6 +150,16 @@ bash release.sh apk        # 打包并更新 versionCode/versionName，web.build
 ```
 
 上传 `dist/kebao-<版本>.apk` 到标签 `v<版本>`，同样提交根目录的 `update.json`。
+
+**用脚本自动发布**（省掉网页上手动拖文件）
+
+```bash
+echo ghp_xxxxxxxxxxxxxxxx > .gh-token    # 只需一次，token 需带 repo 写权限
+bash publish.sh apk                       # 建 v<版本> 发布并上传 APK
+bash publish.sh web                       # 建 web-<build> 发布并上传资源包
+```
+
+`.gh-token` 已在 `.gitignore` 里，不会被提交。也可以改用 `GITHUB_TOKEN` 环境变量。
 
 **更新源地址**（三处必须一致）
 
