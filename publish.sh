@@ -24,6 +24,21 @@ REPO="$(printf '%s' "$REMOTE" | sed -E 's#^.*github\.com[:/]##; s#\.git$##')"
 MODE="${1:-apk}"
 case "$MODE" in apk|web) ;; *) echo "用法：bash publish.sh [apk|web]"; exit 1 ;; esac
 
+# 先把 tag 指到当前提交并推到远端。
+# 否则 GitHub 收到 tag_name 时若远端没有该 tag，会把它建在当前 HEAD 上，
+# 结果 release 挂着旧提交，jsDelivr 的 @<tag> 路径取不到安装包。
+VER="$(python -c "import json;print(json.load(open('update.json'))['versionName'])" 2>/dev/null || echo '')"
+BUILD="$(python -c "import json;print((json.load(open('update.json')).get('web') or {}).get('build',0))" 2>/dev/null || echo 0)"
+if [ "$MODE" = "apk" ]; then TAG="v$VER"; else TAG="web-$BUILD"; fi
+if git rev-parse -q --verify HEAD >/dev/null 2>&1; then
+  git tag -f "$TAG" >/dev/null 2>&1 || true
+  if GIT_TERMINAL_PROMPT=0 timeout 60 git push -f origin "$TAG" >/dev/null 2>&1; then
+    echo "tag $TAG 已推到远端"
+  else
+    echo "!! tag $TAG 推送失败（网络问题），jsDelivr 镜像可能取不到文件"
+  fi
+fi
+
 GITHUB_TOKEN="$TOKEN" REPO="$REPO" MODE="$MODE" python - <<'PY'
 import json, os, sys, urllib.error, urllib.parse, urllib.request
 
