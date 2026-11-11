@@ -1632,3 +1632,21 @@ textarea.input { resize: none; line-height: 1.6; font-weight: 500; font-size: 13
   text-align: center; font-size: 11.5px; color: var(--ink-3);
   margin-top: 8px; font-variant-numeric: tabular-nums;
 }
+
+/* 更新源列表：长 URL 必须能断行，否则溢出到屏幕外 */
+.src-line {
+  display: flex; gap: 8px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--line-2);
+}
+.src-line:last-child { border-bottom: 0; }
+.src-line b {
+  flex: 0 0 auto; width: 13px;
+  font-size: 11px; font-weight: 700; color: var(--ink-4);
+  line-height: 1.75; text-align: right;
+}
+.src-line span {
+  flex: 1; min-width: 0;
+  font-size: 11.5px; color: var(--ink-3); line-height: 1.75;
+  word-break: break-all;
+}

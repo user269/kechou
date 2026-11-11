@@ -1,14 +1,18 @@
 {
-  "versionCode": 11,
-  "versionName": "1.0.10",
+  "versionCode": 12,
+  "versionName": "1.0.11",
   "notes": [
-    "更新源改为正式仓库 user269/kechou",
-    "新增开源仓库：源码、构建脚本与发布流程",
-    "签名密码改为本地文件读取，不再写进脚本"
+    "修复国内网络下检查更新失败（域名被污染）",
+    "更新清单与安装包都改为多地址依次尝试",
+    "检查失败可直接填自己的更新源"
   ],
   "apk": {
-    "url": "https://github.com/user269/kechou/releases/download/v1.0.10/kebao-1.0.10.apk",
-    "size": 349428
+    "url": "https://github.com/user269/kechou/releases/download/v1.0.11/kebao-1.0.11.apk",
+    "size": 353527,
+    "mirrors": [
+      "https://cdn.jsdelivr.net/gh/user269/kechou@v1.0.11/apk/kebao-1.0.11.apk",
+      "https://ghfast.top/https://github.com/user269/kechou/releases/download/v1.0.11/kebao-1.0.11.apk"
+    ]
   },
   "web": {
     "build": 0,

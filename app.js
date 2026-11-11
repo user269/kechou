@@ -430,6 +430,9 @@ function defaultSettings() {
     dailyRemind: false,
     dailyRemindAt: '21:00',
     defaultDur: 45,
+    updateSource: '',          // 自定义更新源（留空用内置的候选列表）
+    updateCache: null,         // 上次成功拿到的清单，断网时用来告诉用户「上次检查是几号」
+    lastUpdateOk: 0,
     lastLesson: null,          // 上次录入课程时的偏好（类型、时长、人数、延长），下次自动带出
     extendTypeId: 'self',      // 延长课时按哪个类型的单价计价（默认自习）
     termStart: '',             // 学期第一周的周一（用于周次编号与单双周判定）
@@ -2231,7 +2234,7 @@ function renderMine() {
 /* ============================================================
    帮助 · 说明 · 关于
    ============================================================ */
-const APP_VERSION = '1.0.10';
+const APP_VERSION = '1.0.11';
 const APP_BUILD = '2026-11-11';
 
 let helpTab = 'faq';                       // faq | guide | about
@@ -2368,6 +2371,7 @@ const GUIDE_STEPS = [
 ];
 
 const CHANGELOG = [
+  { v: '1.0.11', d: '2026-11-11', items: ['修复国内网络下检查更新失败（域名被污染）', '更新清单与安装包都改为多地址依次尝试', '检查失败可直接填自己的更新源'] },
   { v: '1.0.10', d: '2026-11-11', items: ['更新源改为正式仓库 user269/kechou', '新增开源仓库：源码、构建脚本与发布流程', '签名密码改为本地文件读取，不再写进脚本'] },
   { v: '1.0.9', d: '2026-11-11', items: ['新增自动更新：检查、下载、安装一条龙', '界面可热更新，改文案不必再重装整包', '更新失败不影响本地数据，随时可回退'] },
   { v: '1.0.8', d: '2026-11-11', items: ['「我的」页重排：身份卡带本月课时/课酬/本周剩余', '新增学期进度条，一眼看出第几周、单双周', '计费与课表拆成两组，清理与重置下沉到页脚'] },
@@ -2531,8 +2535,20 @@ function aboutHtml() {
    这样更新逻辑本身也能跟着资源包一起升级。
    ============================================================ */
 
-/** 与 Android 侧 Updater.MANIFEST_URL 保持一致；浏览器预览时由前端自己取。 */
-const UPDATE_MANIFEST = 'https://raw.githubusercontent.com/user269/kechou/main/update.json';
+/**
+ * 更新清单的候选地址。
+ * 国内 raw.githubusercontent.com 常被 DNS 污染（解析到 0.0.0.0，连都连不上），
+ * 只写一个地址必然有人永远更新不了，所以按顺序逐个试，谁先给出合法 JSON 就用谁。
+ * raw 放在第一位是有意为之：被污染时它是「立刻失败」而不是慢慢超时，不会拖累后面的。
+ */
+const UPDATE_SOURCES = [
+  'https://raw.githubusercontent.com/user269/kechou/main/update.json',
+  'https://cdn.jsdelivr.net/gh/user269/kechou@main/update.json',
+  'https://ghfast.top/https://raw.githubusercontent.com/user269/kechou/main/update.json',
+  'https://raw.gitmirror.com/user269/kechou/main/update.json',
+];
+/** 安装包与资源包的镜像前缀，GitHub 的下载直链在国内同样常被卡。 */
+const MIRROR_PREFIXES = ['https://ghfast.top/', 'https://gh-proxy.com/'];
 const UPDATE_GAP = 6 * 60 * 60 * 1000;   // 自动检查的最小间隔
 
 const UPD = {
@@ -2544,10 +2560,52 @@ const UPD = {
   size: 0,
   build: 0,
   url: '',
+  urls: [],         // 下载地址候选：原始地址 + 清单里的 mirrors + 镜像前缀
+  source: '',       // 这次是从哪个清单地址拿到的
   pct: 0,
   err: '',
 };
 let updSilent = true;
+
+/** 这一轮要试的清单地址：用户自定义的排最前，其余按内置顺序。 */
+function manifestSources() {
+  const custom = String((state.settings && state.settings.updateSource) || '').trim();
+  const list = [];
+  if (custom) list.push(custom);
+  UPDATE_SOURCES.forEach(u => { if (list.indexOf(u) < 0) list.push(u); });
+  return list;
+}
+
+/** 给一个地址生成候选列表：清单给的镜像优先，然后原始地址，最后是通用镜像前缀。 */
+function mirrorUrls(url, extra) {
+  const out = [];
+  const add = u => { if (u && out.indexOf(u) < 0) out.push(u); };
+  // 清单里的 mirrors 是发布时按可达性排好序的，国内往往比原始直链先通
+  (Array.isArray(extra) ? extra : []).forEach(add);
+  add(url);
+  // 只有 GitHub 的直链才套镜像前缀，用户自定义的地址原样使用
+  const u = String(url || '');
+  if (u.indexOf('https://github.com/') === 0
+      || u.indexOf('https://raw.githubusercontent.com/') === 0) {
+    MIRROR_PREFIXES.forEach(pfx => add(pfx + u));
+  }
+  return out;
+}
+
+/** 把原生的英文异常翻成用户能看懂、并且知道下一步该干什么的话。 */
+function friendlyUpdateError(msg) {
+  const m = String(msg || '');
+  if (/0\.0\.0\.0|ConnectException|Failed to connect|ECONNREFUSED/i.test(m)) {
+    return '连不上 GitHub 的更新服务器，这个域名在国内常被网络运营商拦截（会解析成 0.0.0.0）。下面几个备用地址也都没通，可以点「换个更新源」填自己的地址，或连上代理后再试。';
+  }
+  if (/UnknownHost|域名解析|No address associated/i.test(m)) {
+    return '域名解析失败，当前网络查不到更新服务器。换成流量或换个 WiFi 再试一次。';
+  }
+  if (/超时|timeout/i.test(m)) return '连接超时，网络太慢或该地址不可达，稍后重试即可。';
+  if (/HTTP 4\d\d/.test(m)) return '更新服务器返回了错误状态（' + m + '），可能是仓库或发布被删掉了。';
+  if (/清单为空|清单格式|JSON/i.test(m)) return '更新清单内容不对，可能被网络中间设备改写了，换个网络再试。';
+  return m || '未知错误';
+}
 
 /** 当前安装包与资源包的版本信息，浏览器里取不到就按「永不提示整包」处理。 */
 function localAppInfo() {
@@ -2574,6 +2632,7 @@ function applyManifest(man) {
   UPD.latest = '';
   UPD.notes = [];
   UPD.url = '';
+  UPD.urls = [];
   UPD.size = 0;
   UPD.build = 0;
 
@@ -2584,6 +2643,7 @@ function applyManifest(man) {
     UPD.notes = Array.isArray(man.notes) ? man.notes : [];
     UPD.size = Number(man.apk.size) || 0;
     UPD.url = apkUrl;
+    UPD.urls = mirrorUrls(apkUrl, man.apk.mirrors);
   } else if (webBuild > Number(local.webBuild || 0) && web && web.url) {
     UPD.kind = 'web';
     UPD.latest = web.name || `资源 ${webBuild}`;
@@ -2591,6 +2651,7 @@ function applyManifest(man) {
       : (Array.isArray(man.notes) ? man.notes : []);
     UPD.size = Number(web.size) || 0;
     UPD.url = String(web.url);
+    UPD.urls = mirrorUrls(UPD.url, web.mirrors);
     UPD.build = webBuild;
   }
 }
@@ -2600,29 +2661,36 @@ function checkUpdate(silent) {
   updSilent = !!silent;
   UPD.checking = true;
   UPD.err = '';
+  UPD.source = '';
 
   if (!silent) {
     UPD.phase = 'check';
     openUpdateSheet();
   }
 
+  const sources = manifestSources();
+
   if (IS_NATIVE && NATIVE.updateCheck) {
     try {
-      NATIVE.updateCheck();       // 结果走 window.__onUpdateCheck
+      // 原生按顺序挨个试，第一个成功的把地址回传过来
+      NATIVE.updateCheck(JSON.stringify(sources));
     } catch (e) {
       handleCheck(null, '调用更新接口失败');
     }
     return;
   }
 
-  // 浏览器预览：raw.githubusercontent 允许跨域，直接取即可
-  fetch(UPDATE_MANIFEST, { cache: 'no-store' })
-    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
-    .then(t => handleCheck(t, null))
-    .catch(e => handleCheck(null, (e && e.message) || '网络不可用'));
+  // 浏览器预览：没有原生兜底，只能自己一个个试
+  (function next(i) {
+    if (i >= sources.length) return handleCheck(null, '所有更新地址都连不上');
+    fetch(sources[i], { cache: 'no-store' })
+      .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+      .then(t => handleCheck(t, null, sources[i]))
+      .catch(() => next(i + 1));
+  })(0);
 }
 
-function handleCheck(text, err) {
+function handleCheck(text, err, source) {
   UPD.checking = false;
   if (err) return handleCheckFail(err);
 
@@ -2634,9 +2702,13 @@ function handleCheck(text, err) {
   }
   if (!man || typeof man !== 'object') return handleCheckFail('更新清单为空');
 
+  UPD.source = source || '';
   applyManifest(man);
   UPD.phase = UPD.kind ? 'idle' : 'uptodate';
   state.settings.lastUpdateAt = Date.now();
+  state.settings.lastUpdateOk = Date.now();
+  // 留一份最近的清单，断网时至少能告诉用户上次检查到了什么
+  state.settings.updateCache = { body: JSON.stringify(man), at: Date.now() };
   save();
 
   if (updSilent) {
@@ -2651,7 +2723,7 @@ function handleCheck(text, err) {
 
 function handleCheckFail(msg) {
   UPD.checking = false;
-  UPD.err = msg || '未知错误';
+  UPD.err = friendlyUpdateError(msg);
   if (updSilent) return;            // 后台检查失败静默忽略，不打扰用户
   UPD.phase = 'error';
   renderUpdateSheet();
@@ -2666,9 +2738,10 @@ function startUpdate() {
   UPD.phase = 'download';
   UPD.pct = 0;
   renderUpdateSheet();
+  const urls = (UPD.urls && UPD.urls.length) ? UPD.urls : mirrorUrls(UPD.url);
   try {
-    if (UPD.kind === 'web') NATIVE.updateDownloadWeb(UPD.url, UPD.build);
-    else NATIVE.updateDownloadApk(UPD.url, UPD.latest);
+    if (UPD.kind === 'web') NATIVE.updateDownloadWeb(JSON.stringify(urls), UPD.build);
+    else NATIVE.updateDownloadApk(JSON.stringify(urls), UPD.latest);
   } catch (e) {
     handleResult(UPD.kind, false, '调用下载接口失败');
   }
@@ -2724,7 +2797,7 @@ function maybeAutoCheckUpdate() {
   }, 4000);
 }
 
-window.__onUpdateCheck = function (text, err) { handleCheck(text, err); };
+window.__onUpdateCheck = function (text, err, source) { handleCheck(text, err, source); };
 window.__onUpdateProgress = function (kind, pct) {
   if (kind !== UPD.kind) return;
   UPD.pct = clamp(Number(pct) || 0, 0, 100);
@@ -2744,6 +2817,51 @@ function openUpdateSheet() {
   });
 }
 
+/** 换个更新源：给被墙的用户留一条自己填地址的出路。 */
+function openUpdateSource() {
+  const cur = String(state.settings.updateSource || '');
+  const def = UPDATE_SOURCES
+    .map((u, i) => `<div class="src-line"><b>${i + 1}</b><span>${esc(u)}</span></div>`)
+    .join('');
+  openSheet({
+    title: '更新源',
+    body: `
+      <div class="help-note" style="margin-top:4px">
+        <b>为什么会有这个问题</b><br>
+        更新清单放在 GitHub 上，国内部分网络会把 <b>raw.githubusercontent.com</b> 解析成 0.0.0.0，直接连不上。
+        应用已经内置了 4 个备用地址轮流试，如果都不通，可以在这里填一个自己能访问的地址。
+      </div>
+      <div class="section-label">自定义地址</div>
+      <input class="input" id="upd-src" placeholder="https://你的域名/update.json" value="${esc(cur)}">
+      <div class="tiny muted" style="margin-top:8px;line-height:1.7">
+        留空表示只用内置地址。填了之后它会排在最前面，失败再退回内置的。
+      </div>
+      <div class="section-label">内置地址（按顺序尝试）</div>
+      ${def}
+      <div class="rows" style="margin-top:14px">
+        <div class="row" data-act="upd-clear-src">
+          <div class="ri" style="background:#F2F4F7;color:var(--ink-2)">${ic('swap', 17)}</div>
+          <div class="rc"><div class="t">恢复默认</div><div class="s">只使用内置的四个地址</div></div>
+          ${ic('right', 15)}
+        </div>
+      </div>`,
+    footer: `<button class="btn ghost" data-close>取消</button><button class="btn" data-act="upd-save-src">保存并重试</button>`,
+  });
+}
+
+function saveUpdateSource() {
+  const el = $('#upd-src');
+  const v = el ? String(el.value || '').trim() : '';
+  if (v && !/^https?:\/\//i.test(v)) {
+    toast('地址要以 http:// 或 https:// 开头', 'bell');
+    return;
+  }
+  state.settings.updateSource = v;
+  save();
+  closeSheet();
+  setTimeout(() => checkUpdate(false), 150);
+}
+
 function renderUpdateSheet() {
   const body = $('#updBody');
   if (!body) return;
@@ -2753,6 +2871,18 @@ function renderUpdateSheet() {
     foot.innerHTML = updateFooterHtml();
     foot.querySelectorAll('[data-close]').forEach(b => { b.onclick = closeSheet; });
   }
+}
+
+/** 简短时间：今天只说时分，其他日子带月日。 */
+function fmtShortTime(ts) {
+  const d = new Date(Number(ts) || 0);
+  if (!d.getTime()) return '';
+  const pad = n => String(n).padStart(2, '0');
+  const hm = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const t0 = new Date();
+  const sameDay = d.getFullYear() === t0.getFullYear()
+    && d.getMonth() === t0.getMonth() && d.getDate() === t0.getDate();
+  return sameDay ? `今天 ${hm}` : `${d.getMonth() + 1} 月 ${d.getDate()} 日 ${hm}`;
 }
 
 function sizeText(byte) {
@@ -2773,12 +2903,17 @@ function updateBodyHtml() {
   }
 
   if (UPD.phase === 'error') {
+    const cache = state.settings.updateCache;
+    const when = cache && cache.at ? fmtShortTime(cache.at) : '';
     return `<div class="upd-wait">
       <div class="upd-mark err">!</div>
       <div class="upd-title">检查失败</div>
       <div class="upd-sub">${esc(UPD.err || '网络不可用')}</div>
     </div>
-    <div class="help-note">确认手机能正常联网后重试。课表与课酬都在本机，联网失败不会影响任何已有数据。</div>`;
+    <div class="help-note">
+      课表与课酬都存在本机，<b>检查失败不影响任何数据</b>，可以照常使用。
+      ${when ? `<br>上次成功检查：${esc(when)}` : ''}
+    </div>`;
   }
 
   if (UPD.phase === 'uptodate') {
@@ -2818,7 +2953,8 @@ function updateFooterHtml() {
     case 'check':
       return `<button class="btn ghost" data-close>取消</button>`;
     case 'error':
-      return `<button class="btn" data-act="upd-retry">重试</button><button class="btn ghost" data-close>关闭</button>`;
+      return `<button class="btn" data-act="upd-retry">重试</button>`
+        + `<button class="btn ghost" data-act="upd-source">换个更新源</button>`;
     case 'uptodate':
       return `<button class="btn ghost" data-close>知道了</button>`;
     case 'download':
@@ -5008,6 +5144,15 @@ document.addEventListener('click', e => {
     case 'upd-install': installUpdate(); break;
     case 'upd-reload': applyWebUpdate(); break;
     case 'upd-retry': checkUpdate(false); break;
+    case 'upd-source': openUpdateSource(); break;
+    case 'upd-save-src': saveUpdateSource(); break;
+    case 'upd-clear-src':
+      state.settings.updateSource = '';
+      save();
+      toast('已恢复默认更新源', 'check');
+      closeSheet();
+      setTimeout(() => checkUpdate(false), 150);
+      break;
     case 'upd-later': closeSheet(); break;
     case 'upd-open':
       if (UPD.kind) openUpdateSheet();

@@ -73,6 +73,9 @@ if mode == 'web':
         'url': '%s/%s/%s' % (base, tag, name),
         'size': size,
         'notes': data['web'].get('notes') or data['notes'],
+        'mirrors': [
+            'https://ghfast.top/%s/%s/%s' % (base, tag, name),
+        ],
     }
     save()
 
@@ -110,10 +113,21 @@ elif mode == 'apk':
 
     data['versionCode'] = vcode
     data['versionName'] = vname
+    # 镜像顺序即客户端的尝试顺序：jsDelivr 走仓库文件（CDN），
+    # 后面两个是 GitHub 反代，最后才是 release 原始直链（国内常被卡）
     data['apk'] = {
         'url': '%s/%s/%s' % (base, tag, name),
         'size': size,
+        'mirrors': [
+            'https://cdn.jsdelivr.net/gh/%s/%s@%s/apk/%s' % (owner, repo, tag, name),
+            'https://ghfast.top/%s/%s/%s' % (base, tag, name),
+        ],
     }
+    # 顺手把安装包放进仓库，jsDelivr 才有文件可发
+    apkdir = os.path.join('apk')
+    os.makedirs(apkdir, exist_ok=True)
+    shutil.copyfile(dst, os.path.join(apkdir, name))
+    print('已放入仓库目录：apk/%s（供 jsDelivr 镜像使用，记得一起提交）' % name)
     # 新整包里的前端就是最新的，资源号归零，避免刚装上就提示要热更
     data['web'] = {'build': 0, 'url': '', 'size': 0, 'notes': []}
     save()

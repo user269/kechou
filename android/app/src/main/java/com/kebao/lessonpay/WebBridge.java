@@ -281,22 +281,25 @@ public class WebBridge {
                 + ",\"canInstall\":" + updater().canInstall() + "}";
     }
 
-    /** 拉更新清单，结果走 window.__onUpdateCheck(json, err)。 */
+    /**
+     * 拉更新清单，结果走 window.__onUpdateCheck(json, err, source)。
+     * urlsJson 是候选地址的 JSON 数组，国内 raw 常被污染，要能挨个试。
+     */
     @JavascriptInterface
-    public void updateCheck() {
-        updater().check();
+    public void updateCheck(String urlsJson) {
+        updater().check(urlsJson);
     }
 
-    /** 下载前端资源包并启用，参数为清单里的 build 号。 */
+    /** 下载前端资源包并启用，第二个参数是清单里的 build 号。 */
     @JavascriptInterface
-    public void updateDownloadWeb(String url, int build) {
-        updater().downloadWeb(url, build);
+    public void updateDownloadWeb(String urlsJson, int build) {
+        updater().downloadWeb(urlsJson, build);
     }
 
-    /** 下载整包，完成后调 updateInstall()。 */
+    /** 下载整包，完成后调 updateInstall()。urlsJson 同样是候选数组。 */
     @JavascriptInterface
-    public void updateDownloadApk(String url, String versionName) {
-        updater().downloadApk(url, versionName);
+    public void updateDownloadApk(String urlsJson, String versionName) {
+        updater().downloadApk(urlsJson, versionName);
     }
 
     /** 唤起系统安装器。返回 need-permission 时页面应引导去授权。 */

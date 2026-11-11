@@ -39,9 +39,23 @@ public class Updater {
     public static final String MANIFEST_URL =
             "https://raw.githubusercontent.com/user269/kechou/main/update.json";
 
+    /**
+     * 国内 raw.githubusercontent.com 常被 DNS 污染，解析到 0.0.0.0 直接连不上。
+     * 所以清单地址永远是一串候选，逐个试，第一个拿到合法 JSON 的就用。
+     * 实际顺序由页面传入（跟界面一起热更），这里只是兜底。
+     */
+    private static final String[] FALLBACK_MANIFESTS = {
+            MANIFEST_URL,
+            "https://cdn.jsdelivr.net/gh/user269/kechou@main/update.json",
+            "https://ghfast.top/https://raw.githubusercontent.com/user269/kechou/main/update.json",
+            "https://raw.gitmirror.com/user269/kechou/main/update.json",
+    };
+
     private static final String PREFS = "kebao_update";
     private static final String KEY_WEB_BUILD = "webBuild";
     private static final int CONNECT_TIMEOUT = 10000;
+    /** 清单很小，单个地址别等太久，否则五六个备用地址排下来要好几分钟。 */
+    private static final int MANIFEST_CONNECT_TIMEOUT = 5000;
     private static final int READ_TIMEOUT = 30000;
     private static final int MAX_MANIFEST = 256 * 1024;
 
@@ -55,53 +69,81 @@ public class Updater {
     // ---------------- 对外能力 ----------------
 
     /** 拉取 update.json，结果原样交给页面，由 JS 比较版本。 */
-    void check() {
+    void check(final String urlsJson) {
         if (busy) return;
         busy = true;
         new Thread(() -> {
+            String[] urls = parseUrls(urlsJson);
             String body = null;
-            String err = null;
-            try {
-                body = httpGetText(MANIFEST_URL);
-                if (body == null || body.trim().isEmpty()) {
-                    err = "清单为空";
-                    body = null;
-                } else {
+            String source = null;
+            String lastErr = null;
+            int tried = 0;
+            for (String u : urls) {
+                if (isBlank(u)) continue;
+                tried++;
+                try {
+                    String t = httpGetText(u, MANIFEST_CONNECT_TIMEOUT);
+                    if (t == null || t.trim().isEmpty()) throw new IOException("清单为空");
                     // 先确认是合法 JSON 对象，避免把 HTML 错误页塞给页面
-                    new JSONObject(body);
+                    new JSONObject(t);
+                    body = t;
+                    source = u;
+                    break;
+                } catch (Throwable e) {
+                    lastErr = describe(e);
                 }
-            } catch (Throwable e) {
-                body = null;
-                err = describe(e);
             }
             final String b = body;
-            final String e2 = err;
+            final String src = source;
+            String msg = lastErr == null ? "无法连接更新服务器" : lastErr;
+            if (tried > 1) msg = msg + "（已试 " + tried + " 个地址）";
+            final String e2 = msg;
             busy = false;
             post(() -> {
                 if (b != null) {
                     emit("window.__onUpdateCheck&&window.__onUpdateCheck("
-                            + JSONObject.quote(b) + ",null)");
+                            + JSONObject.quote(b) + ",null," + JSONObject.quote(src) + ")");
                 } else {
                     emit("window.__onUpdateCheck&&window.__onUpdateCheck(null,"
-                            + JSONObject.quote(e2 == null ? "unknown" : e2) + ")");
+                            + JSONObject.quote(e2) + ",'')");
                 }
             });
         }).start();
     }
 
     /** 下载并启用新的前端资源包。build 为正整数，写入本地用于下次比较。 */
-    void downloadWeb(final String url, final int build) {
-        if (busy || isBlank(url)) return;
+    void downloadWeb(final String urlsJson, final int build) {
+        if (busy) return;
+        final String[] urls = parseUrls(urlsJson);
+        if (urls.length == 0) return;
         busy = true;
         new Thread(() -> {
             File zip = new File(act.getCacheDir(), "www-update.zip");
-            String err = null;
+            String err = "没有可用的下载地址";
             try {
-                httpDownload(url, zip, "web");
-                File target = new File(act.getFilesDir(), "www.new");
-                unzipTo(zip, target);
-                swapWeb(target);
-                setWebBuild(build);
+                // 逐个地址试，第一个下完整的就用
+                int tried = 0;
+                for (String u : urls) {
+                    if (isBlank(u)) continue;
+                    tried++;
+                    try {
+                        //noinspection ResultOfMethodCallIgnored
+                        zip.delete();
+                        httpDownload(u, zip, "web");
+                        err = null;
+                        break;
+                    } catch (Throwable e) {
+                        err = describe(e);
+                    }
+                }
+                if (err != null) {
+                    if (tried > 1) err = err + "（已试 " + tried + " 个地址）";
+                } else {
+                    File target = new File(act.getFilesDir(), "www.new");
+                    unzipTo(zip, target);
+                    swapWeb(target);
+                    setWebBuild(build);
+                }
             } catch (Throwable e) {
                 err = describe(e);
             } finally {
@@ -122,27 +164,36 @@ public class Updater {
     }
 
     /** 下载整包到 filesDir/update，完成后由页面调用 installPending() 唤起安装器。 */
-    void downloadApk(final String url, final String versionName) {
-        if (busy || isBlank(url)) return;
+    void downloadApk(final String urlsJson, final String versionName) {
+        if (busy) return;
+        final String[] urls = parseUrls(urlsJson);
+        if (urls.length == 0) return;
         busy = true;
         new Thread(() -> {
             String safeVer = isBlank(versionName) ? "latest" : versionName.replaceAll("[^0-9A-Za-z._-]", "");
             File dest = new File(ApkProvider.dirOf(act), "kebao-" + safeVer + ".apk");
-            String err = null;
-            try {
-                if (dest.exists()) //noinspection ResultOfMethodCallIgnored
+            String err = "没有可用的下载地址";
+            int tried = 0;
+            for (String u : urls) {
+                if (isBlank(u)) continue;
+                tried++;
+                try {
+                    if (dest.exists()) //noinspection ResultOfMethodCallIgnored
+                        dest.delete();
+                    long size = httpDownload(u, dest, "apk");
+                    if (size > 0 && dest.length() != size) throw new IOException("下载不完整");
+                    // 至少校验是个 zip 结构的 APK，避免把错误页存成 apk
+                    if (!looksLikeApk(dest)) throw new IOException("安装包校验失败");
+                    err = null;
+                    break;
+                } catch (Throwable e) {
+                    err = describe(e);
+                    //noinspection ResultOfMethodCallIgnored
                     dest.delete();
-                long size = httpDownload(url, dest, "apk");
-                if (size > 0 && dest.length() != size) throw new IOException("下载不完整");
-                // 至少校验是个 zip 结构的 APK，避免把错误页存成 apk
-                if (!looksLikeApk(dest)) throw new IOException("安装包校验失败");
-            } catch (Throwable e) {
-                err = describe(e);
-                //noinspection ResultOfMethodCallIgnored
-                dest.delete();
-            } finally {
-                busy = false;
+                }
             }
+            if (err != null && tried > 1) err = err + "（已试 " + tried + " 个地址）";
+            busy = false;
             final String e2 = err;
             final String path = dest.getAbsolutePath();
             post(() -> {
@@ -332,8 +383,25 @@ public class Updater {
         return total;
     }
 
-    private String httpGetText(String urlStr) throws IOException {
-        HttpURLConnection c = open(urlStr);
+    /** 把页面传来的地址列表解析成数组；解析不了就退回内置候选。 */
+    private static String[] parseUrls(String json) {
+        if (!isBlank(json)) {
+            String t = json.trim();
+            if (t.startsWith("http")) return new String[]{t};
+            try {
+                org.json.JSONArray arr = new org.json.JSONArray(t);
+                String[] out = new String[arr.length()];
+                for (int i = 0; i < arr.length(); i++) out[i] = arr.optString(i, "").trim();
+                if (out.length > 0) return out;
+            } catch (Throwable ignored) {
+                // 落到兜底列表
+            }
+        }
+        return FALLBACK_MANIFESTS;
+    }
+
+    private String httpGetText(String urlStr, int connectMs) throws IOException {
+        HttpURLConnection c = open(urlStr, connectMs);
         try (InputStream in = c.getInputStream()) {
             ByteArrayOutputStream bos = new ByteArrayOutputStream();
             byte[] buf = new byte[8192];
@@ -350,9 +418,9 @@ public class Updater {
         }
     }
 
-    private HttpURLConnection open(String urlStr) throws IOException {
+    private HttpURLConnection open(String urlStr, int connectMs) throws IOException {
         HttpURLConnection c = (HttpURLConnection) new URL(urlStr).openConnection();
-        c.setConnectTimeout(CONNECT_TIMEOUT);
+        c.setConnectTimeout(connectMs);
         c.setReadTimeout(READ_TIMEOUT);
         c.setInstanceFollowRedirects(true);
         c.setRequestProperty("User-Agent", "KebaoUpdater/1.0 (Android)");
@@ -361,6 +429,10 @@ public class Updater {
         int code = c.getResponseCode();
         if (code != 200) throw new IOException("HTTP " + code);
         return c;
+    }
+
+    private HttpURLConnection open(String urlStr) throws IOException {
+        return open(urlStr, CONNECT_TIMEOUT);
     }
 
     private static boolean looksLikeApk(File f) {
@@ -406,8 +478,10 @@ public class Updater {
         if (e == null) return "未知错误";
         String m = e.getMessage();
         String n = e.getClass().getSimpleName();
-        if (e instanceof java.net.UnknownHostException) return "无法连接更新服务器";
+        if (e instanceof java.net.UnknownHostException) return "域名解析失败：找不到更新服务器";
+        if (e instanceof java.net.ConnectException) return "连不上更新服务器（该地址可能已被拦截）";
         if (e instanceof java.net.SocketTimeoutException) return "连接超时";
+        if (e instanceof java.net.SocketException) return "网络连接被中断";
         if (e instanceof javax.net.ssl.SSLException) return "证书校验失败";
         return isBlank(m) ? n : n + ": " + m;
     }

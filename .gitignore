@@ -12,8 +12,10 @@ android/.keystore-pass
 # GitHub token（发布脚本用）
 .gh-token
 
-# 安装包
+# 安装包（根目录与构建产物不入库，只保留 apk/ 下供 CDN 镜像的那份）
 *.apk
+!apk/
+!apk/*.apk
 
 # 编译中间件
 *.class
