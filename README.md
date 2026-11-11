@@ -51,7 +51,8 @@
 ├── icon-192.png        # PWA 图标
 ├── icon-512.png
 ├── release.sh          # 发版脚本：打资源包 / 整包，生成 update.json
-├── dist/               # 发版产物（update.json 需提交，zip/apk 传 Release）
+├── update.json         # 更新清单，客户端从 raw 直链读这个文件
+├── dist/               # 发版产物（zip/apk 传 Release，不进仓库）
 └── android/
     ├── build.sh        # 一键构建 APK（aapt2 → javac → d8 → zipalign → apksigner）
     ├── keystore.jks    # 签名证书（不提交）
@@ -139,7 +140,7 @@ update.json（仓库根目录，raw 直链）
 bash release.sh web        # 生成 dist/www-N.zip，web.build 自动 +1
 ```
 
-把 `dist/www-N.zip` 上传到 Release，标签用脚本提示的 `web-N`；把 `dist/update.json` 提交到仓库根目录。
+把 `dist/www-N.zip` 上传到 Release，标签用脚本提示的 `web-N`；仓库根目录的 `update.json` 会自动更新，提交即可。
 
 **改了原生代码**
 
@@ -147,7 +148,7 @@ bash release.sh web        # 生成 dist/www-N.zip，web.build 自动 +1
 bash release.sh apk        # 打包并更新 versionCode/versionName，web.build 归零
 ```
 
-上传 `dist/kebao-<版本>.apk` 到标签 `v<版本>`，同样提交 `update.json`。
+上传 `dist/kebao-<版本>.apk` 到标签 `v<版本>`，同样提交根目录的 `update.json`。
 
 **更新源地址**（三处必须一致）
 

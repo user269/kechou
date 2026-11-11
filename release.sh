@@ -15,7 +15,7 @@ GH_OWNER="${GH_OWNER:-user269}"
 GH_REPO="${GH_REPO:-kechou}"
 BASE="https://github.com/$GH_OWNER/$GH_REPO/releases/download"
 DIST="dist"
-MANIFEST="$DIST/update.json"
+MANIFEST="update.json"   # 固定放仓库根目录，客户端从 raw 直链读这一份
 WEB_FILES="index.html styles.css app.js icon.svg icon-192.png icon-512.png manifest.json"
 
 MODE="${1:-web}"
@@ -81,7 +81,7 @@ if mode == 'web':
     print('上传：')
     print('  gh release create %s %s --title "资源 %s" --notes "界面与文案更新"' % (tag, path, build))
     print()
-    print('清单 %s 里的 web 段已更新，把 dist/update.json 一并提交到仓库根目录。' % manifest_path)
+    print('清单 %s 的 web 段已更新，把它一起提交到 main 分支即可。' % manifest_path)
 
 elif mode == 'apk':
     vname = vcode = None
@@ -123,7 +123,7 @@ elif mode == 'apk':
     print('上传：')
     print('  gh release create %s %s --title "课酬 %s" --notes "见更新记录"' % (tag, dst, vname))
     print()
-    print('清单 %s 里的 versionCode/versionName/apk 段已更新。' % manifest_path)
+    print('清单 %s 的 versionCode/versionName/apk 段已更新，记得提交。' % manifest_path)
 
 print()
 print('清单预览：')
