@@ -1,0 +1,32 @@
+# 构建产物
+android/build/
+dist/*.apk
+dist/*.zip
+
+# 签名证书与密码：只在本地保留，绝不提交
+android/keystore.jks
+android/.keystore-pass
+*.jks
+*.keystore
+
+# 安装包
+*.apk
+
+# 编译中间件
+*.class
+*.dex
+classes.dex
+
+# 本地截图与临时文件
+__shot-*.html
+*.local
+
+# 系统与编辑器
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+
+# WorkBuddy 本地工作目录
+.workbuddy/
