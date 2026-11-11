@@ -2234,7 +2234,7 @@ function renderMine() {
 /* ============================================================
    帮助 · 说明 · 关于
    ============================================================ */
-const APP_VERSION = '1.0.11';
+const APP_VERSION = '1.0.12';
 const APP_BUILD = '2026-11-11';
 
 let helpTab = 'faq';                       // faq | guide | about
@@ -2371,6 +2371,7 @@ const GUIDE_STEPS = [
 ];
 
 const CHANGELOG = [
+  { v: '1.0.12', d: '2026-11-11', items: ['备用更新地址换成实测可用的镜像', '移除已失效的旧镜像域名'] },
   { v: '1.0.11', d: '2026-11-11', items: ['修复国内网络下检查更新失败（域名被污染）', '更新清单与安装包都改为多地址依次尝试', '检查失败可直接填自己的更新源'] },
   { v: '1.0.10', d: '2026-11-11', items: ['更新源改为正式仓库 user269/kechou', '新增开源仓库：源码、构建脚本与发布流程', '签名密码改为本地文件读取，不再写进脚本'] },
   { v: '1.0.9', d: '2026-11-11', items: ['新增自动更新：检查、下载、安装一条龙', '界面可热更新，改文案不必再重装整包', '更新失败不影响本地数据，随时可回退'] },
@@ -2545,7 +2546,7 @@ const UPDATE_SOURCES = [
   'https://raw.githubusercontent.com/user269/kechou/main/update.json',
   'https://cdn.jsdelivr.net/gh/user269/kechou@main/update.json',
   'https://ghfast.top/https://raw.githubusercontent.com/user269/kechou/main/update.json',
-  'https://raw.gitmirror.com/user269/kechou/main/update.json',
+  'https://gh-proxy.com/https://raw.githubusercontent.com/user269/kechou/main/update.json',
 ];
 /** 安装包与资源包的镜像前缀，GitHub 的下载直链在国内同样常被卡。 */
 const MIRROR_PREFIXES = ['https://ghfast.top/', 'https://gh-proxy.com/'];

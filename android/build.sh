@@ -22,8 +22,8 @@ OUT="build"
 KS="keystore.jks"
 # 签名密码不写进仓库：优先读环境变量，其次读本地 android/.keystore-pass
 KS_PASS="${KS_PASS:-$(cat .keystore-pass 2>/dev/null || true)}"
-VERSION_NAME="1.0.11"
-VERSION_CODE="12"
+VERSION_NAME="1.0.12"
+VERSION_CODE="13"
 APK_NAME="课酬-${VERSION_NAME}.apk"
 
 # ---------- 前置检查 ----------

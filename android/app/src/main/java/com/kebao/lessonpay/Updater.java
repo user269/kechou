@@ -48,7 +48,7 @@ public class Updater {
             MANIFEST_URL,
             "https://cdn.jsdelivr.net/gh/user269/kechou@main/update.json",
             "https://ghfast.top/https://raw.githubusercontent.com/user269/kechou/main/update.json",
-            "https://raw.gitmirror.com/user269/kechou/main/update.json",
+            "https://gh-proxy.com/https://raw.githubusercontent.com/user269/kechou/main/update.json",
     };
 
     private static final String PREFS = "kebao_update";

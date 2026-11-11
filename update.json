@@ -1,17 +1,17 @@
 {
-  "versionCode": 12,
-  "versionName": "1.0.11",
+  "versionCode": 13,
+  "versionName": "1.0.12",
   "notes": [
     "修复国内网络下检查更新失败（域名被污染）",
     "更新清单与安装包都改为多地址依次尝试",
     "检查失败可直接填自己的更新源"
   ],
   "apk": {
-    "url": "https://github.com/user269/kechou/releases/download/v1.0.11/kebao-1.0.11.apk",
-    "size": 353527,
+    "url": "https://github.com/user269/kechou/releases/download/v1.0.12/kebao-1.0.12.apk",
+    "size": 353526,
     "mirrors": [
-      "https://cdn.jsdelivr.net/gh/user269/kechou@v1.0.11/apk/kebao-1.0.11.apk",
-      "https://ghfast.top/https://github.com/user269/kechou/releases/download/v1.0.11/kebao-1.0.11.apk"
+      "https://cdn.jsdelivr.net/gh/user269/kechou@v1.0.12/apk/kebao-1.0.12.apk",
+      "https://ghfast.top/https://github.com/user269/kechou/releases/download/v1.0.12/kebao-1.0.12.apk"
     ]
   },
   "web": {
