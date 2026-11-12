@@ -1,17 +1,17 @@
 {
-  "versionCode": 14,
-  "versionName": "1.0.13",
+  "versionCode": 15,
+  "versionName": "1.0.14",
   "notes": [
-    "新增法定节假日：内置 2026–2027 年放假与补班安排",
-    "可改日期名称、设半天放学，联网可同步最新年份",
-    "铺课表自动跳过假期，补班日按指定星期的课表上课"
+    "修复「检查更新一直显示已是最新」：多个地址同时查询，取版本号最新的那份",
+    "更新清单不再依赖会被 CDN 缓存住的地址",
+    "「已是最新」页显示服务器上的版本号，读到旧清单会直接提示并给出换源入口"
   ],
   "apk": {
-    "url": "https://github.com/user269/kechou/releases/download/v1.0.13/kebao-1.0.13.apk",
-    "size": 361716,
+    "url": "https://github.com/user269/kechou/releases/download/v1.0.14/kebao-1.0.14.apk",
+    "size": 365813,
     "mirrors": [
-      "https://cdn.jsdelivr.net/gh/user269/kechou@v1.0.13/apk/kebao-1.0.13.apk",
-      "https://ghfast.top/https://github.com/user269/kechou/releases/download/v1.0.13/kebao-1.0.13.apk"
+      "https://cdn.jsdelivr.net/gh/user269/kechou@v1.0.14/apk/kebao-1.0.14.apk",
+      "https://ghfast.top/https://github.com/user269/kechou/releases/download/v1.0.14/kebao-1.0.14.apk"
     ]
   },
   "web": {
@@ -19,5 +19,6 @@
     "url": "",
     "size": 0,
     "notes": []
-  }
+  },
+  "updated": "2026-11-12T01:36:56Z"
 }

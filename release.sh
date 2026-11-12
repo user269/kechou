@@ -44,6 +44,8 @@ data.setdefault('apk', {'url': '', 'size': 0})
 data.setdefault('web', {'build': 0, 'url': '', 'size': 0, 'notes': []})
 
 def save():
+    import time
+    data['updated'] = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
     with open(manifest_path, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
         f.write('\n')
@@ -143,3 +145,11 @@ print()
 print('清单预览：')
 print(open(manifest_path, encoding='utf-8').read())
 PY
+
+# jsDelivr 的分支地址会缓存 12 小时，发布后立刻清一次，减少节点还在吐旧清单的窗口。
+# 客户端已经改成「并发取版本号最大」，即使这里没清干净也不会误判成「已是最新」。
+for p in update.json holidays.json; do
+  if curl -s -m 20 "https://purge.jsdelivr.net/gh/${GH_OWNER}/${GH_REPO}@main/${p}" >/dev/null 2>&1; then
+    echo "已请求清除 jsDelivr 缓存：${p}"
+  fi
+done
