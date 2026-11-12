@@ -1,18 +1,19 @@
 {
-  "versionCode": 20,
-  "versionName": "1.0.19",
+  "versionCode": 21,
+  "versionName": "1.0.20",
   "notes": [
-    "课时费页新增「月账单」：一键复制成文字，或导出 CSV 表格",
-    "作息表可一键套用初中 / 高中 / 小学三套常见时间",
-    "第 9 节有课时套用短作息会被拦下，避免时间算错"
+    "新增「补贴与扣款」：班主任津贴、监考费、代课费、缺勤扣款都能记",
+    "可设「每月固定」或「只这一次」，一次性款项不会重复计算",
+    "月报与导出表格会带上这些条目",
+    "作息模板支持联网更新，新增学段/地区作息不用等新版本"
   ],
   "apk": {
-    "url": "https://github.com/user269/kechou/releases/download/v1.0.19/kebao-1.0.19.apk",
+    "url": "https://github.com/user269/kechou/releases/download/v1.0.20/kebao-1.0.20.apk",
     "size": 378102,
     "mirrors": [
-      "https://ghfast.top/https://github.com/user269/kechou/releases/download/v1.0.19/kebao-1.0.19.apk",
-      "https://gh-proxy.com/https://github.com/user269/kechou/releases/download/v1.0.19/kebao-1.0.19.apk",
-      "https://ghproxy.net/https://github.com/user269/kechou/releases/download/v1.0.19/kebao-1.0.19.apk"
+      "https://ghfast.top/https://github.com/user269/kechou/releases/download/v1.0.20/kebao-1.0.20.apk",
+      "https://gh-proxy.com/https://github.com/user269/kechou/releases/download/v1.0.20/kebao-1.0.20.apk",
+      "https://ghproxy.net/https://github.com/user269/kechou/releases/download/v1.0.20/kebao-1.0.20.apk"
     ]
   },
   "web": {
@@ -21,5 +22,5 @@
     "size": 0,
     "notes": []
   },
-  "updated": "2026-11-12T11:05:44Z"
+  "updated": "2026-11-12T12:52:12Z"
 }

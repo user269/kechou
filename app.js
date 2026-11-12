@@ -687,6 +687,66 @@ const PERIOD_PRESETS = [
   },
 ];
 
+/* ---------- 模板同步（内容与代码解耦：改 templates.json 即可，不用发版） ---------- */
+const TEMPLATE_BUNDLES = [
+  'https://cdn.jsdelivr.net/gh/user269/kechou@main/templates.json',
+  'https://ghfast.top/https://raw.githubusercontent.com/user269/kechou/main/templates.json',
+  'https://gh-proxy.com/https://raw.githubusercontent.com/user269/kechou/main/templates.json',
+  'https://raw.githubusercontent.com/user269/kechou/main/templates.json',
+];
+const HM_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/** 内置模板 + 联网同步来的模板，同 id 以联网的为准 */
+function allPresets() {
+  const map = new Map(PERIOD_PRESETS.map(p => [p.id, p]));
+  (state.templates || []).forEach(p => map.set(p.id, p));
+  return [...map.values()];
+}
+
+/** 容错解析：字段缺一个就丢那一条，不整份作废 */
+function parseTemplatePayload(text) {
+  const j = JSON.parse(text);
+  const list = (j && j.periods) || null;
+  if (!Array.isArray(list) || !list.length) throw new Error('没有模板数据');
+
+  const out = [];
+  list.forEach(p => {
+    if (!p || !p.id || !p.name) return;
+    const items = (p.items || []).filter(it => it && it.name
+      && HM_RE.test(String(it.start)) && HM_RE.test(String(it.end)));
+    if (!items.length) return;
+    out.push({
+      id: String(p.id).slice(0, 24),
+      name: String(p.name).slice(0, 20),
+      desc: String(p.desc || `${items.length} 个节次`).slice(0, 40),
+      periods: items.slice(0, 20).map(it => ({
+        name: String(it.name).slice(0, 8),
+        short: String(it.short || '').slice(0, 4),
+        start: it.start,
+        end: it.end,
+      })),
+    });
+  });
+  if (!out.length) throw new Error('模板内容不可用');
+  return out;
+}
+
+async function syncTemplates() {
+  const errors = [];
+  for (const url of TEMPLATE_BUNDLES) {
+    try {
+      const list = parseTemplatePayload(await fetchWithTimeout(url, 8000));
+      state.templates = list;
+      state.meta.templateSyncAt = Date.now();
+      save();
+      return { ok: true, count: list.length, errors };
+    } catch (e) {
+      errors.push(`${url.slice(0, 38)}… ${e && e.message ? e.message : '失败'}`);
+    }
+  }
+  return { ok: false, errors };
+}
+
 function defaultTypes() {
   return [
     { id: 'regular', name: '正课',   unit: 'period', price: 65,  factor: 1,   color: '#3B5BFD', tierable: true,  enabled: true },
@@ -752,7 +812,9 @@ let state = {
   master: {},           // 总课表模板：`星期#节次#周次` → { typeId, klass, subject }
   adjusts: [],          // 调休记录
   holidays: allBuiltinHolidays(),   // 法定节假日（放假 / 补班），可自行增删改
-  meta: { seeded: false, notified: {}, holidaySyncAt: 0 },
+  templates: [],        // 联网同步来的作息模板（内置的另算，见 allPresets）
+  extras: [],           // 补贴与扣款：{id,name,amount,kind:'add'|'sub',cycle:'monthly'|'once',date}
+  meta: { seeded: false, notified: {}, holidaySyncAt: 0, templateSyncAt: 0 },
 };
 
 function save() {
@@ -1132,6 +1194,32 @@ function pickTier(cum) {
  * 月度结算
  * 返回 { rows, total, doneFee, planFee, doneCount, planCount, byType, km }
  */
+/* ---------------- 补贴与扣款 ---------------- */
+/**
+ * 某月生效的补贴/扣款条目。
+ *
+ * cycle='monthly'：从起始那个月起，往后每个月都算（班主任津贴、教龄补贴这类）；
+ * cycle='once'   ：只算起始那个月（监考费、代课费、一次性的缺勤扣款）。
+ * 都是"起始月 ≤ 目标月"即可，想看更早的月份自然不会命中。
+ */
+function extrasOf(ym, list) {
+  return (list || state.extras || []).filter(e => {
+    const em = String(e.date || '').slice(0, 7);
+    if (!em) return false;
+    return e.cycle === 'monthly' ? em <= ym : em === ym;
+  }).sort((a, b) => String(a.date).localeCompare(String(b.date)));
+}
+
+function extraTotals(ym) {
+  const rows = extrasOf(ym);
+  let add = 0, sub = 0;
+  rows.forEach(e => {
+    const a = Math.abs(Number(e.amount) || 0);
+    if (e.kind === 'sub') sub += a; else add += a;
+  });
+  return { rows, add: round2(add), sub: round2(sub) };
+}
+
 function calcMonth(ym) {
   const scheme = state.settings.scheme;
   const tstr = todayYmd();
@@ -1209,7 +1297,10 @@ function calcMonth(ym) {
     }
   });
 
-  const total = round2(rows.reduce((s, r) => s + r.subtotal, 0));
+  const lessonTotal = round2(rows.reduce((s, r) => s + r.subtotal, 0));
+  // 补贴与扣款直接进总额：工资条上本来就是一进一出算在一起的
+  const ex = extraTotals(ym);
+  const total = round2(lessonTotal + ex.add - ex.sub);
   const doneFee = round2(rows.filter(r => r.done).reduce((s, r) => s + r.subtotal, 0));
   const planFee = round2(total - doneFee);
   const doneCount = rows.filter(r => r.done).length;
@@ -1220,8 +1311,9 @@ function calcMonth(ym) {
   const km = round2(totalMinutes / 45);
 
   return {
-    ym, rows, total, doneFee, planFee, doneCount, planCount,
+    ym, rows, total, lessonTotal, doneFee, planFee, doneCount, planCount,
     count: rows.length, km,
+    extraRows: ex.rows, extraAdd: ex.add, extraSub: ex.sub,
     byType: Object.values(byType).sort((a, b) => b.fee - a.fee),
   };
 }
@@ -2550,7 +2642,7 @@ function renderPay() {
       </div>
       <div class="stat">
         <div class="k">${ic('chart', 13)} 单节均价</div>
-        <div class="v">${m.count ? Math.round(m.total / m.count) : 0}<small>元</small></div>
+        <div class="v">${m.count ? Math.round(m.lessonTotal / m.count) : 0}<small>元</small></div>
         <div class="d">${delta}</div>
       </div>
     </div>
@@ -2571,6 +2663,32 @@ function renderPay() {
             </div>
             <div class="sb-track"><div class="sb-fill" style="width:${Math.max(3, (t.fee / maxTypeFee) * 100)}%;background:linear-gradient(90deg,${t.color}AA,${t.color})"></div></div>
           </div>`).join('') : `<div class="empty" style="padding:16px"><div class="s">本月还没有课时记录</div></div>`}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <div class="card-title"><span class="dot" style="background:var(--amber)"></span>补贴与扣款</div>
+        <div class="card-more">${m.extraAdd || m.extraSub
+          ? `${m.extraAdd ? '+' + money(m.extraAdd) : ''}${m.extraAdd && m.extraSub ? ' · ' : ''}${m.extraSub ? '−' + money(m.extraSub) : ''}`
+          : '本月没有'}</div>
+      </div>
+      ${m.extraRows.length ? `<div class="rows">
+        ${m.extraRows.map(e => `
+          <div class="row" data-act="extra-edit" data-id="${esc(e.id)}" style="padding-left:0;padding-right:0">
+            <div class="ri" style="background:${e.kind === 'sub' ? 'var(--rose-soft)' : 'var(--mint-soft)'};color:${e.kind === 'sub' ? 'var(--rose)' : 'var(--mint)'}">${ic(e.kind === 'sub' ? 'download' : 'spark', 16)}</div>
+            <div class="rc">
+              <div class="t">${esc(e.name || '未命名')}</div>
+              <div class="s">${e.cycle === 'monthly' ? '每月固定' : '只这一次'}</div>
+            </div>
+            <div class="rv" style="color:${e.kind === 'sub' ? 'var(--rose)' : 'var(--mint)'}">${e.kind === 'sub' ? '−' : '+'}${money(Math.abs(Number(e.amount) || 0))}</div>
+            ${ic('right', 15)}
+          </div>`).join('')}
+      </div>` : `<div class="help-note" style="margin-top:0">班主任津贴、监考费、代课费、缺勤扣款，都可以记在这里，会一起算进月度总额。</div>`}
+      <div class="row" data-act="extra-add" style="padding-left:0;padding-right:0;border-top:1px solid var(--line-2)">
+        <div class="ri" style="background:var(--brand-soft);color:var(--brand)">${ic('plus', 16)}</div>
+        <div class="rc"><div class="t">添加补贴 / 扣款</div></div>
+        ${ic('right', 15)}
       </div>
     </div>
 
@@ -2795,7 +2913,7 @@ function renderMine() {
 /* ============================================================
    帮助 · 说明 · 关于
    ============================================================ */
-const APP_VERSION = '1.0.19';
+const APP_VERSION = '1.0.20';
 const APP_BUILD = '2026-11-12';
 
 let helpTab = 'faq';                       // faq | guide | about
@@ -2941,6 +3059,7 @@ const GUIDE_STEPS = [
 ];
 
 const CHANGELOG = [
+  { v: '1.0.20', d: '2026-11-12', items: ['新增「补贴与扣款」：班主任津贴、监考费、代课费、缺勤扣款都能记账，一起算进月度总额', '可设「每月固定」或「只这一次」，一次性款项不会跟着月份重复', '月报和导出的表格里也会带上这些条目', '作息模板可以联网更新，以后新增学段或地区作息不用等新版本'] },
   { v: '1.0.19', d: '2026-11-12', items: ['课时费页新增「月账单」：一键复制成文字，或导出表格（Excel / WPS 直接打开）', '作息表可一键套用初中 / 高中 / 小学三套常见时间', '已经有课排在第 9 节时，套用短作息会被拦下，避免时间算错'] },
   { v: '1.0.18', d: '2026-11-12', items: ['新版本不用自己想起来看了：后台每 6 小时查一次，有更新会弹通知', '点通知直接打开更新页，一路点到装好', '页面被系统回收后会自动重开，不再整应用退出'] },
   { v: '1.0.17', d: '2026-11-12', items: ['修复在 Android 17 上打开就退出的问题', '万一还是闪退，下次打开会显示原因，可复制发给我'] },
@@ -4606,6 +4725,111 @@ function openTermSheet() {
   });
 }
 
+/* ---------- 补贴 / 扣款 ---------- */
+let draftExtra = null;
+
+function openExtraSheet(id) {
+  const hit = id ? (state.extras || []).find(e => e.id === id) : null;
+  draftExtra = hit
+    ? { ...hit }
+    : {
+      // 同一毫秒内连加两条时 Date.now() 会撞车，补随机后缀
+      id: 'x' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      name: '', amount: 0, kind: 'add', cycle: 'monthly', date: `${payMonth}-01`,
+    };
+  renderExtraSheet();
+}
+
+function renderExtraSheet() {
+  const d = draftExtra;
+  if (!d) return;
+  const editing = (state.extras || []).some(e => e.id === d.id);
+  openSheet({
+    title: editing ? '编辑补贴 / 扣款' : '添加补贴 / 扣款',
+    body: `
+      <div class="field">
+        <div class="field-label">名称</div>
+        <input class="input" id="extraName" maxlength="20"
+               value="${esc(d.name)}" placeholder="如 班主任津贴、监考费">
+      </div>
+      <div class="field">
+        <div class="field-label">类型</div>
+        <div class="segmented">
+          <button class="${d.kind === 'sub' ? '' : 'on'}" data-act="extra-kind" data-v="add">补贴（加钱）</button>
+          <button class="${d.kind === 'sub' ? 'on' : ''}" data-act="extra-kind" data-v="sub">扣款（减钱）</button>
+        </div>
+      </div>
+      <div class="field">
+        <div class="field-label">金额（元）</div>
+        <input class="input" id="extraAmount" type="number" inputmode="decimal"
+               min="0" step="0.01" value="${d.amount || ''}" placeholder="0.00">
+      </div>
+      <div class="field">
+        <div class="field-label">什么时候</div>
+        <div class="segmented">
+          <button class="${d.cycle === 'monthly' ? 'on' : ''}" data-act="extra-cycle" data-v="monthly">每月固定</button>
+          <button class="${d.cycle === 'monthly' ? '' : 'on'}" data-act="extra-cycle" data-v="once">只这一次</button>
+        </div>
+        <input class="input" id="extraDate" type="date" value="${esc(d.date)}" style="margin-top:10px">
+        <div class="help-note" style="margin-top:10px">${d.cycle === 'monthly'
+          ? '从所选月份起，之后每个月都算，直到你删掉它。'
+          : '只算所选日期所在的那个月。'}</div>
+      </div>
+      ${editing ? '<button class="danger-link" style="margin-top:4px" data-act="extra-del">删除这条</button>' : ''}
+    `,
+    footer: `<button class="btn ghost" data-close>取消</button><button class="btn" data-act="extra-save">保存</button>`,
+  });
+}
+
+/** 重绘面板前先把输入框的值收回草稿，否则点一下分段按钮刚填的就没了 */
+function syncExtraInputs() {
+  if (!draftExtra) return;
+  const n = $('#extraName'), a = $('#extraAmount'), d = $('#extraDate');
+  if (n) draftExtra.name = n.value;
+  if (a) draftExtra.amount = Number(a.value) || 0;
+  if (d) draftExtra.date = d.value;
+}
+
+function saveExtraSheet() {
+  const d = draftExtra;
+  if (!d) return;
+  const name = (($('#extraName') || {}).value || '').trim();
+  const amount = Number((($('#extraAmount') || {}).value || '').trim());
+  const date = (($('#extraDate') || {}).value || '').trim();
+  if (!name) { toast('给它起个名字'); return; }
+  if (!Number.isFinite(amount) || amount <= 0) { toast('金额要大于 0'); return; }
+  if (!YMD_RE.test(date)) { toast('选一个日期'); return; }
+
+  d.name = name;
+  d.amount = round2(amount);
+  d.date = date;
+  const i = (state.extras || []).findIndex(e => e.id === d.id);
+  if (i >= 0) state.extras[i] = { ...d };
+  else state.extras.push({ ...d });
+  save();
+  closeSheet();
+  render();
+  toast('已保存', 'check');
+}
+
+function deleteExtra() {
+  const d = draftExtra;
+  if (!d) return;
+  state.extras = (state.extras || []).filter(e => e.id !== d.id);
+  save();
+  closeSheet();
+  render();
+  toast('已删除');
+}
+
+function tplSyncText() {
+  const n = (state.templates || []).length;
+  const at = Number(state.meta.templateSyncAt) || 0;
+  if (!at) return '联网获取更多学段 / 地区作息';
+  const d = new Date(at);
+  return `${n} 个已同步 · ${d.getMonth() + 1}月${d.getDate()}日更新`;
+}
+
 function openPeriodsSheet() {
   openSheet({
     title: '作息时间表',
@@ -4614,12 +4838,20 @@ function openPeriodsSheet() {
         <div>这里的时间决定课表显示、课前提醒和<b>自习时长</b>，改完会自动同步。</div></div>
       <div class="field-label">套用常见作息</div>
       <div class="rows" style="background:#F7F9FC;border-radius:14px;margin-bottom:16px">
-        ${PERIOD_PRESETS.map((p, i) => `
-          <div class="row" data-act="period-preset" data-p="${p.id}"
+        ${allPresets().map((p, i) => `
+          <div class="row" data-act="period-preset" data-p="${esc(p.id)}"
                style="padding:11px 13px${i ? ';border-top:1px solid var(--line-2)' : ''}">
-            <div class="rc"><div class="t" style="font-size:14px">${p.name}</div><div class="s">${p.desc}</div></div>
+            <div class="rc"><div class="t" style="font-size:14px">${esc(p.name)}</div><div class="s">${esc(p.desc || '')}</div></div>
             ${ic('right', 15)}
           </div>`).join('')}
+        <div class="row" data-act="tpl-sync" style="padding:11px 13px;border-top:1px solid var(--line-2)">
+          <div class="ri" style="background:var(--brand-soft);color:var(--brand)">${ic('download', 16)}</div>
+          <div class="rc">
+            <div class="t" style="font-size:14px">更新模板</div>
+            <div class="s">${tplSyncText()}</div>
+          </div>
+          ${ic('right', 15)}
+        </div>
       </div>
       <div class="field-label">逐节时间</div>
       ${state.periods.map((p, i) => `
@@ -4636,7 +4868,7 @@ function openPeriodsSheet() {
 }
 
 function applyPeriodPreset(id) {
-  const p = PERIOD_PRESETS.find(x => x.id === id);
+  const p = allPresets().find(x => x.id === id);
   if (!p) return;
 
   // 已经排到第 9 节的课，套用只有 6 节的作息后会被算成第 1 节，金额和提醒时间都会错。
@@ -5071,6 +5303,15 @@ function monthStatementText(ym) {
   if (who) L.push(who);
   L.push('');
   L.push(`总课酬　${money(m.total)}`);
+  if (m.extraAdd || m.extraSub) {
+    L.push(`　课时费　${money(m.lessonTotal)}`);
+    if (m.extraAdd) L.push(`　补贴　　+${money(m.extraAdd)}`);
+    if (m.extraSub) L.push(`　扣款　　−${money(m.extraSub)}`);
+    m.extraRows.forEach(e => {
+      L.push(`　　· ${e.name} ${e.kind === 'sub' ? '−' : '+'}${money(Math.abs(Number(e.amount) || 0))}`
+        + `${e.cycle === 'monthly' ? '（每月）' : ''}`);
+    });
+  }
   L.push(`课程　　${m.count} 节（已完成 ${m.doneCount} 节，待上 ${m.planCount} 节）`);
   L.push(`已完成　${money(m.doneFee)}`);
   if (m.planCount) L.push(`待上　　${money(m.planFee)}`);
@@ -5129,6 +5370,17 @@ function monthStatementCsv(ym) {
       r.extend ? r.extend.minutes : 0,
       r.subtotal,
       r.done ? '已完成' : '待上',
+    ].map(csvCell).join(','));
+  });
+  // 补贴与扣款也占一行，明细看着才完整（一进一出在小计列带符号）
+  m.extraRows.forEach(e => {
+    const amt = Math.abs(Number(e.amount) || 0);
+    lines.push([
+      '', '', '', '', e.name || '未命名', '',
+      e.kind === 'sub' ? '扣款' : '补贴',
+      '', '', amt, '', '',
+      e.kind === 'sub' ? -amt : amt,
+      e.cycle === 'monthly' ? '每月固定' : '一次性',
     ].map(csvCell).join(','));
   });
   // 合计行：金额列放在「小计」那一列
@@ -6013,7 +6265,38 @@ document.addEventListener('click', e => {
     /* 月账单：复制文字 / 导出表格 */
     case 'stmt-copy': copyMonthStatement(); break;
     case 'stmt-csv': exportMonthStatement(); break;
+
+    /* 补贴与扣款 */
+    case 'extra-add': openExtraSheet(); break;
+    case 'extra-edit': openExtraSheet(el.dataset.id); break;
+    case 'extra-kind':
+      if (draftExtra) {
+        syncExtraInputs();
+        draftExtra.kind = el.dataset.v === 'sub' ? 'sub' : 'add';
+        renderExtraSheet();
+      }
+      break;
+    case 'extra-cycle':
+      if (draftExtra) {
+        syncExtraInputs();
+        draftExtra.cycle = el.dataset.v === 'monthly' ? 'monthly' : 'once';
+        renderExtraSheet();
+      }
+      break;
+    case 'extra-save': saveExtraSheet(); break;
+    case 'extra-del': deleteExtra(); break;
     case 'period-preset': applyPeriodPreset(el.dataset.p); break;
+    case 'tpl-sync':
+      toast('正在获取模板…');
+      syncTemplates().then(r => {
+        if (r.ok) {
+          toast(`已同步 ${r.count} 个模板`, 'check');
+          openPeriodsSheet();
+        } else {
+          toast('没连上模板服务器，稍后再试');
+        }
+      });
+      break;
 
     /* 课表文本：快捷导入导出 */
     case 'open-schedule-io': openScheduleIO(el.dataset.ie || 'export'); break;
