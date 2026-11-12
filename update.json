@@ -1,19 +1,16 @@
 {
-  "versionCode": 21,
-  "versionName": "1.0.20",
+  "versionCode": 22,
+  "versionName": "1.0.21",
   "notes": [
-    "新增「补贴与扣款」：班主任津贴、监考费、代课费、缺勤扣款都能记",
-    "可设「每月固定」或「只这一次」，一次性款项不会重复计算",
-    "月报与导出表格会带上这些条目",
-    "作息模板支持联网更新，新增学段/地区作息不用等新版本"
+    "作息模板改为优先走实时线路，更新后不会拿到缓存的旧模板"
   ],
   "apk": {
-    "url": "https://github.com/user269/kechou/releases/download/v1.0.20/kebao-1.0.20.apk",
-    "size": 378102,
+    "url": "https://github.com/user269/kechou/releases/download/v1.0.21/kebao-1.0.21.apk",
+    "size": 378100,
     "mirrors": [
-      "https://ghfast.top/https://github.com/user269/kechou/releases/download/v1.0.20/kebao-1.0.20.apk",
-      "https://gh-proxy.com/https://github.com/user269/kechou/releases/download/v1.0.20/kebao-1.0.20.apk",
-      "https://ghproxy.net/https://github.com/user269/kechou/releases/download/v1.0.20/kebao-1.0.20.apk"
+      "https://ghfast.top/https://github.com/user269/kechou/releases/download/v1.0.21/kebao-1.0.21.apk",
+      "https://gh-proxy.com/https://github.com/user269/kechou/releases/download/v1.0.21/kebao-1.0.21.apk",
+      "https://ghproxy.net/https://github.com/user269/kechou/releases/download/v1.0.21/kebao-1.0.21.apk"
     ]
   },
   "web": {
@@ -22,5 +19,5 @@
     "size": 0,
     "notes": []
   },
-  "updated": "2026-11-12T12:52:12Z"
+  "updated": "2026-11-12T12:57:29Z"
 }

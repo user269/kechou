@@ -688,11 +688,13 @@ const PERIOD_PRESETS = [
 ];
 
 /* ---------- 模板同步（内容与代码解耦：改 templates.json 即可，不用发版） ---------- */
+// 顺序有讲究：jsDelivr 的 @main 地址有 12 小时 CDN 缓存，放前面会拿旧内容还不报错；
+// 反代走的是实时的 raw，所以反代优先、jsDelivr 殿后兜底。
 const TEMPLATE_BUNDLES = [
-  'https://cdn.jsdelivr.net/gh/user269/kechou@main/templates.json',
   'https://ghfast.top/https://raw.githubusercontent.com/user269/kechou/main/templates.json',
   'https://gh-proxy.com/https://raw.githubusercontent.com/user269/kechou/main/templates.json',
   'https://raw.githubusercontent.com/user269/kechou/main/templates.json',
+  'https://cdn.jsdelivr.net/gh/user269/kechou@main/templates.json',
 ];
 const HM_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 
@@ -2913,7 +2915,7 @@ function renderMine() {
 /* ============================================================
    帮助 · 说明 · 关于
    ============================================================ */
-const APP_VERSION = '1.0.20';
+const APP_VERSION = '1.0.21';
 const APP_BUILD = '2026-11-12';
 
 let helpTab = 'faq';                       // faq | guide | about
@@ -3059,6 +3061,7 @@ const GUIDE_STEPS = [
 ];
 
 const CHANGELOG = [
+  { v: '1.0.21', d: '2026-11-12', items: ['作息模板改为优先走实时线路，更新后不再被 CDN 缓存拖住'] },
   { v: '1.0.20', d: '2026-11-12', items: ['新增「补贴与扣款」：班主任津贴、监考费、代课费、缺勤扣款都能记账，一起算进月度总额', '可设「每月固定」或「只这一次」，一次性款项不会跟着月份重复', '月报和导出的表格里也会带上这些条目', '作息模板可以联网更新，以后新增学段或地区作息不用等新版本'] },
   { v: '1.0.19', d: '2026-11-12', items: ['课时费页新增「月账单」：一键复制成文字，或导出表格（Excel / WPS 直接打开）', '作息表可一键套用初中 / 高中 / 小学三套常见时间', '已经有课排在第 9 节时，套用短作息会被拦下，避免时间算错'] },
   { v: '1.0.18', d: '2026-11-12', items: ['新版本不用自己想起来看了：后台每 6 小时查一次，有更新会弹通知', '点通知直接打开更新页，一路点到装好', '页面被系统回收后会自动重开，不再整应用退出'] },
