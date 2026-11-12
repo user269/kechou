@@ -2727,7 +2727,7 @@ function renderMine() {
 /* ============================================================
    帮助 · 说明 · 关于
    ============================================================ */
-const APP_VERSION = '1.0.13';
+const APP_VERSION = '1.0.14';
 const APP_BUILD = '2026-11-12';
 
 let helpTab = 'faq';                       // faq | guide | about
@@ -2873,6 +2873,7 @@ const GUIDE_STEPS = [
 ];
 
 const CHANGELOG = [
+  { v: '1.0.14', d: '2026-11-12', items: ['修复「检查更新一直显示已是最新」：多个地址同时查询，取版本号最新的那份', '更新清单不再依赖会被长时间缓存的地址', '「已是最新」页显示服务器版本号，读到的清单比本机旧会直接提示'] },
   { v: '1.0.13', d: '2026-11-12', items: ['新增法定节假日：内置 2026–2027 年放假与补班安排', '可改日期名称、设半天放学，联网可同步最新年份', '铺课表自动跳过假期，补班日按指定星期的课表上课'] },
   { v: '1.0.12', d: '2026-11-11', items: ['备用更新地址换成实测可用的镜像', '移除已失效的旧镜像域名'] },
   { v: '1.0.11', d: '2026-11-11', items: ['修复国内网络下检查更新失败（域名被污染）', '更新清单与安装包都改为多地址依次尝试', '检查失败可直接填自己的更新源'] },
@@ -3041,18 +3042,28 @@ function aboutHtml() {
 
 /**
  * 更新清单的候选地址。
+ *
  * 国内 raw.githubusercontent.com 常被 DNS 污染（解析到 0.0.0.0，连都连不上），
- * 只写一个地址必然有人永远更新不了，所以按顺序逐个试，谁先给出合法 JSON 就用谁。
- * raw 放在第一位是有意为之：被污染时它是「立刻失败」而不是慢慢超时，不会拖累后面的。
+ * 所以列一串备用地址。注意这里**不是**「谁先成功就用谁」——那样会踩缓存：
+ * jsDelivr 的分支（@main）地址带 12 小时 CDN 缓存，发布新版后它会继续吐旧清单，
+ * 而它往往又比别的源先返回，于是新版本永远检测不到。
+ *
+ * 正确做法见 checkUpdate()：所有地址并发拉，取 versionCode 最大的那一份。
+ * 缓存旧的源自然被淘汰，不再影响判断。
+ *
+ * jsDelivr 故意放最后，只做「别的源全挂」时的兜底：
+ * 它的内容可能是旧的，但至少能告诉用户「连上了，只是没看到新版」。
+ * 用 @latest 而不是 @main —— tag 是不可变地址，新版本一发布就是全新 URL，不会被旧缓存粘住。
  */
 const UPDATE_SOURCES = [
   'https://raw.githubusercontent.com/user269/kechou/main/update.json',
-  'https://cdn.jsdelivr.net/gh/user269/kechou@main/update.json',
   'https://ghfast.top/https://raw.githubusercontent.com/user269/kechou/main/update.json',
   'https://gh-proxy.com/https://raw.githubusercontent.com/user269/kechou/main/update.json',
+  'https://ghproxy.net/https://raw.githubusercontent.com/user269/kechou/main/update.json',
+  'https://cdn.jsdelivr.net/gh/user269/kechou@latest/update.json',
 ];
 /** 安装包与资源包的镜像前缀，GitHub 的下载直链在国内同样常被卡。 */
-const MIRROR_PREFIXES = ['https://ghfast.top/', 'https://gh-proxy.com/'];
+const MIRROR_PREFIXES = ['https://ghfast.top/', 'https://gh-proxy.com/', 'https://ghproxy.net/'];
 const UPDATE_GAP = 6 * 60 * 60 * 1000;   // 自动检查的最小间隔
 
 const UPD = {
@@ -3066,6 +3077,8 @@ const UPD = {
   url: '',
   urls: [],         // 下载地址候选：原始地址 + 清单里的 mirrors + 镜像前缀
   source: '',       // 这次是从哪个清单地址拿到的
+  remoteName: '',   // 清单里写的最新版本名，用于「已是最新」时展示，方便排查
+  remoteCode: 0,
   pct: 0,
   err: '',
 };
@@ -3139,6 +3152,8 @@ function applyManifest(man) {
   UPD.urls = [];
   UPD.size = 0;
   UPD.build = 0;
+  UPD.remoteName = remoteName;
+  UPD.remoteCode = remoteCode;
 
   // 整包里已经带了最新界面，所以只要能换整包就不必再下一份资源
   if (remoteCode > Number(local.versionCode || 0) && apkUrl) {
@@ -3160,12 +3175,44 @@ function applyManifest(man) {
   }
 }
 
+/** 清单的「新旧」排序依据：先比整包 versionCode，再比资源包 build。 */
+function manifestRank(man) {
+  return [
+    Number(man && man.versionCode) || 0,
+    Number(man && man.web && man.web.build) || 0,
+  ];
+}
+
+/** 从若干份成功拿到的清单里挑最新的一份。全都没有就返回 null。 */
+function pickNewestManifest(list) {
+  let best = null;
+  let bestRank = null;
+  (list || []).forEach(it => {
+    const r = manifestRank(it.man);
+    if (!best) { best = it; bestRank = r; return; }
+    if (r[0] > bestRank[0] || (r[0] === bestRank[0] && r[1] > bestRank[1])) {
+      best = it; bestRank = r;
+    }
+  });
+  return best;
+}
+
+/**
+ * 检查更新。所有清单地址同时拉，谁报的版本号大就用谁。
+ *
+ * 为什么不能「第一个连上就用」：CDN 缓存会让某个源长期返回旧清单，
+ * 它又常常比别的源快，于是应用永远认为「已是最新」，而实际上新版本已经发了。
+ * 并发 + 取最大是最省事也最稳的解法——旧缓存源的答案天然被淘汰，
+ * 代价只是一次多发几个小请求（清单才几百字节）。
+ */
 function checkUpdate(silent) {
   if (UPD.checking) return;
   updSilent = !!silent;
   UPD.checking = true;
   UPD.err = '';
   UPD.source = '';
+  UPD.remoteName = '';
+  UPD.remoteCode = 0;
 
   if (!silent) {
     UPD.phase = 'check';
@@ -3173,10 +3220,11 @@ function checkUpdate(silent) {
   }
 
   const sources = manifestSources();
+  if (!sources.length) return handleCheck(null, '没有可用的更新地址');
 
   if (IS_NATIVE && NATIVE.updateCheck) {
     try {
-      // 原生按顺序挨个试，第一个成功的把地址回传过来
+      // 原生在后台并发拉全部分支，把版本最高的那份回传过来
       NATIVE.updateCheck(JSON.stringify(sources));
     } catch (e) {
       handleCheck(null, '调用更新接口失败');
@@ -3184,14 +3232,30 @@ function checkUpdate(silent) {
     return;
   }
 
-  // 浏览器预览：没有原生兜底，只能自己一个个试
-  (function next(i) {
-    if (i >= sources.length) return handleCheck(null, '所有更新地址都连不上');
-    fetch(sources[i], { cache: 'no-store' })
-      .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
-      .then(t => handleCheck(t, null, sources[i]))
-      .catch(() => next(i + 1));
-  })(0);
+  // 浏览器预览：没有原生兜底，用 fetch 自己并发试
+  let left = sources.length;
+  let firstErr = '';
+  const got = [];
+  sources.forEach(src => {
+    fetch(src, { cache: 'no-store' })
+      .then(r => {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.text();
+      })
+      .then(t => {
+        let man = null;
+        try { man = JSON.parse(t); } catch (e) { throw new Error('清单格式错误'); }
+        if (!man || typeof man !== 'object') throw new Error('清单为空');
+        got.push({ body: t, source: src, man });
+      })
+      .catch(e => { if (!firstErr) firstErr = (e && e.message) || '连接失败'; })
+      .then(() => {
+        if (--left > 0) return;
+        const best = pickNewestManifest(got);
+        if (best) handleCheck(best.body, null, best.source);
+        else handleCheck(null, firstErr || '所有更新地址都连不上');
+      });
+  });
 }
 
 function handleCheck(text, err, source) {
@@ -3333,19 +3397,19 @@ function openUpdateSource() {
       <div class="help-note" style="margin-top:4px">
         <b>为什么会有这个问题</b><br>
         更新清单放在 GitHub 上，国内部分网络会把 <b>raw.githubusercontent.com</b> 解析成 0.0.0.0，直接连不上。
-        应用已经内置了 4 个备用地址轮流试，如果都不通，可以在这里填一个自己能访问的地址。
+        应用已经内置了 5 个地址同时去要清单、取版本号最新的那份；如果都不通，可以在这里填一个自己能访问的地址。
       </div>
       <div class="section-label">自定义地址</div>
       <input class="input" id="upd-src" placeholder="https://你的域名/update.json" value="${esc(cur)}">
       <div class="tiny muted" style="margin-top:8px;line-height:1.7">
-        留空表示只用内置地址。填了之后它会排在最前面，失败再退回内置的。
+        留空表示只用内置地址。填了之后它会和内置地址一起尝试。
       </div>
-      <div class="section-label">内置地址（按顺序尝试）</div>
+      <div class="section-label">内置地址（同时尝试，取最新）</div>
       ${def}
       <div class="rows" style="margin-top:14px">
         <div class="row" data-act="upd-clear-src">
           <div class="ri" style="background:#F2F4F7;color:var(--ink-2)">${ic('swap', 17)}</div>
-          <div class="rc"><div class="t">恢复默认</div><div class="s">只使用内置的四个地址</div></div>
+          <div class="rc"><div class="t">恢复默认</div><div class="s">只使用内置的五个地址</div></div>
           ${ic('right', 15)}
         </div>
       </div>`,
@@ -3421,11 +3485,21 @@ function updateBodyHtml() {
   }
 
   if (UPD.phase === 'uptodate') {
+    const rc = Number(UPD.remoteCode) || 0;
+    const lc = Number(local.versionCode) || 0;
+    // rc < lc 说明拿到的清单比本机还旧 —— 典型是 CDN 缓存没刷新，不是真的「最新」
+    const stale = rc > 0 && lc > 0 && rc < lc;
     return `<div class="upd-wait">
       <div class="upd-mark ok">${ic('check', 26)}</div>
       <div class="upd-title">已是最新版本</div>
       <div class="upd-sub">当前 v${esc(local.versionName)}${local.webBuild ? ` · 资源 ${local.webBuild}` : ''}</div>
-    </div>`;
+    </div>
+    ${rc ? `<div class="help-note">
+      服务器上最新：<b>v${esc(UPD.remoteName || rc)}</b>${stale ? ' · 比本机还旧' : ''}<br>
+      ${stale
+        ? '这个更新源明显被 CDN 缓存住了（缓存里还是老清单）。点下面的「换个更新源」换一个再试，通常就能拿到真正的版本号。'
+        : '两边一致，不需要更新。'}
+    </div>` : ''}`;
   }
 
   const kindLabel = UPD.kind === 'apk' ? '完整安装包' : '界面资源包';
@@ -3460,7 +3534,8 @@ function updateFooterHtml() {
       return `<button class="btn" data-act="upd-retry">重试</button>`
         + `<button class="btn ghost" data-act="upd-source">换个更新源</button>`;
     case 'uptodate':
-      return `<button class="btn ghost" data-close>知道了</button>`;
+      return `<button class="btn" data-act="upd-retry">重新检查</button>`
+        + `<button class="btn ghost" data-act="upd-source">换个更新源</button>`;
     case 'download':
       return `<button class="btn" disabled>下载中 ${UPD.pct}%</button>`;
     case 'ready':

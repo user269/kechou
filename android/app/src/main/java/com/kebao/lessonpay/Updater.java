@@ -41,14 +41,17 @@ public class Updater {
 
     /**
      * 国内 raw.githubusercontent.com 常被 DNS 污染，解析到 0.0.0.0 直接连不上。
-     * 所以清单地址永远是一串候选，逐个试，第一个拿到合法 JSON 的就用。
-     * 实际顺序由页面传入（跟界面一起热更），这里只是兜底。
+     * 所以清单地址永远是一串候选。实际顺序由页面传入（跟界面一起热更），这里只是兜底。
+     *
+     * 注意不要用 jsDelivr 的 @main：分支地址带 12 小时 CDN 缓存，
+     * 新版本发布后它还会继续吐旧清单，导致客户端永远认为「已是最新」。
      */
     private static final String[] FALLBACK_MANIFESTS = {
             MANIFEST_URL,
-            "https://cdn.jsdelivr.net/gh/user269/kechou@main/update.json",
             "https://ghfast.top/https://raw.githubusercontent.com/user269/kechou/main/update.json",
             "https://gh-proxy.com/https://raw.githubusercontent.com/user269/kechou/main/update.json",
+            "https://ghproxy.net/https://raw.githubusercontent.com/user269/kechou/main/update.json",
+            "https://cdn.jsdelivr.net/gh/user269/kechou@latest/update.json",
     };
 
     private static final String PREFS = "kebao_update";
@@ -68,35 +71,93 @@ public class Updater {
 
     // ---------------- 对外能力 ----------------
 
-    /** 拉取 update.json，结果原样交给页面，由 JS 比较版本。 */
+    /**
+     * 拉取 update.json，结果原样交给页面，由 JS 比较版本。
+     *
+     * 所有候选地址**同时**发请求，谁报的版本号大就用谁，而不是「第一个连上就用」。
+     * 原因是 CDN 缓存：某个源可能长期返回旧清单（jsDelivr 的分支地址就会缓存 12 小时），
+     * 而它又常常比别人先返回，旧的「顺序尝试」逻辑一撞上它就会永远认为已是最新。
+     * 并发取最大天然淘汰掉旧缓存源，代价只是多发几个几百字节的请求。
+     */
     void check(final String urlsJson) {
         if (busy) return;
         busy = true;
         new Thread(() -> {
-            String[] urls = parseUrls(urlsJson);
+            final String[] urls = parseUrls(urlsJson);
+            final java.util.List<String> list = new java.util.ArrayList<>();
+            for (String u : urls) if (!isBlank(u)) list.add(u.trim());
+            final int n = list.size();
+
+            final String[] bodies = new String[n];
+            final String[] errs = new String[n];
+            final java.util.concurrent.CountDownLatch latch =
+                    new java.util.concurrent.CountDownLatch(n);
+            for (int i = 0; i < n; i++) {
+                final int idx = i;
+                final String u = list.get(i);
+                new Thread(() -> {
+                    try {
+                        String t = httpGetText(u, MANIFEST_CONNECT_TIMEOUT);
+                        if (t == null || t.trim().isEmpty()) throw new IOException("清单为空");
+                        // 先确认是合法 JSON 对象，避免把 HTML 错误页塞给页面
+                        new JSONObject(t);
+                        bodies[idx] = t;
+                    } catch (Throwable e) {
+                        errs[idx] = describe(e);
+                    } finally {
+                        latch.countDown();
+                    }
+                }).start();
+            }
+
+            // 最慢也就等这么久；超时还没回来的地址直接忽略，用已拿到的结果
+            boolean all = false;
+            try {
+                all = latch.await(10, java.util.concurrent.TimeUnit.SECONDS);
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+            }
+
             String body = null;
             String source = null;
             String lastErr = null;
-            int tried = 0;
-            for (String u : urls) {
-                if (isBlank(u)) continue;
-                tried++;
+            int bestCode = -1;
+            int bestBuild = -1;
+            int okCount = 0;
+            for (int i = 0; i < n; i++) {
+                if (bodies[i] == null) {
+                    if (errs[i] != null) lastErr = errs[i];
+                    continue;
+                }
+                okCount++;
+                int vc = 0;
+                int wb = 0;
                 try {
-                    String t = httpGetText(u, MANIFEST_CONNECT_TIMEOUT);
-                    if (t == null || t.trim().isEmpty()) throw new IOException("清单为空");
-                    // 先确认是合法 JSON 对象，避免把 HTML 错误页塞给页面
-                    new JSONObject(t);
-                    body = t;
-                    source = u;
-                    break;
-                } catch (Throwable e) {
-                    lastErr = describe(e);
+                    JSONObject o = new JSONObject(bodies[i]);
+                    vc = o.optInt("versionCode", 0);
+                    JSONObject w = o.optJSONObject("web");
+                    wb = w == null ? 0 : w.optInt("build", 0);
+                } catch (Throwable ignored) {
+                    // 解析不了就按 0 算，等别的源
+                }
+                if (vc > bestCode || (vc == bestCode && wb > bestBuild)) {
+                    bestCode = vc;
+                    bestBuild = wb;
+                    body = bodies[i];
+                    source = list.get(i);
                 }
             }
+
             final String b = body;
             final String src = source;
-            String msg = lastErr == null ? "无法连接更新服务器" : lastErr;
-            if (tried > 1) msg = msg + "（已试 " + tried + " 个地址）";
+            String msg;
+            if (okCount == 0) {
+                msg = lastErr == null ? "无法连接更新服务器" : lastErr;
+                if (n > 1) msg = msg + "（" + n + " 个地址都没通）";
+                if (!all) msg = msg + "，部分地址超时";
+            } else {
+                msg = "清单读取失败";
+            }
             final String e2 = msg;
             busy = false;
             post(() -> {

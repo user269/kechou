@@ -1018,6 +1018,8 @@ input, textarea, select { outline: none; }
   flex: 0 0 auto;
   display: flex; gap: 10px;
 }
+/* 底部按钮等分宽度：否则短的「取消」窄、长的主按钮宽，看着不齐 */
+.sheet-footer > .btn { flex: 1 1 0; min-width: 0; }
 
 .modal {
   width: 100%;
