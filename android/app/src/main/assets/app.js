@@ -102,6 +102,223 @@ function repeatDates(fromDate, mode) {
 }
 
 /* ============================================================
+   法定节假日
+   ============================================================ */
+/** 内置放假安排（依据国务院办公厅通知整理，离线也能直接排课）
+ *  [日期, 名称, 类型]   off = 放假   work = 周末补班上课
+ *  用户可在「我的 → 法定节假日」里改名、改日期、设半天、增删 */
+const HOLIDAY_BUILTIN = {
+  2026: [
+    ['2026-01-01', '元旦', 'off'], ['2026-01-02', '元旦', 'off'], ['2026-01-03', '元旦', 'off'],
+    ['2026-01-04', '元旦补班', 'work'],
+    ['2026-02-14', '春节前补班', 'work'],
+    ['2026-02-15', '春节', 'off'], ['2026-02-16', '除夕', 'off'], ['2026-02-17', '初一', 'off'],
+    ['2026-02-18', '初二', 'off'], ['2026-02-19', '初三', 'off'], ['2026-02-20', '初四', 'off'],
+    ['2026-02-21', '初五', 'off'], ['2026-02-22', '初六', 'off'], ['2026-02-23', '初七', 'off'],
+    ['2026-02-28', '春节后补班', 'work'],
+    ['2026-04-04', '清明节', 'off'], ['2026-04-05', '清明节', 'off'], ['2026-04-06', '清明节', 'off'],
+    ['2026-05-01', '劳动节', 'off'], ['2026-05-02', '劳动节', 'off'], ['2026-05-03', '劳动节', 'off'],
+    ['2026-05-04', '劳动节', 'off'], ['2026-05-05', '劳动节', 'off'],
+    ['2026-05-09', '劳动节补班', 'work'],
+    ['2026-06-19', '端午节', 'off'], ['2026-06-20', '端午节', 'off'], ['2026-06-21', '端午节', 'off'],
+    ['2026-09-20', '国庆前补班', 'work'],
+    ['2026-09-25', '中秋节', 'off'], ['2026-09-26', '中秋节', 'off'], ['2026-09-27', '中秋节', 'off'],
+    ['2026-10-01', '国庆节', 'off'], ['2026-10-02', '国庆节', 'off'], ['2026-10-03', '国庆节', 'off'],
+    ['2026-10-04', '国庆节', 'off'], ['2026-10-05', '国庆节', 'off'], ['2026-10-06', '国庆节', 'off'],
+    ['2026-10-07', '国庆节', 'off'],
+    ['2026-10-10', '国庆后补班', 'work'],
+  ],
+  2027: [
+    ['2027-01-01', '元旦', 'off'], ['2027-01-02', '元旦', 'off'], ['2027-01-03', '元旦', 'off'],
+    ['2027-01-31', '春节前补班', 'work'],
+    ['2027-02-05', '除夕', 'off'], ['2027-02-06', '初一', 'off'], ['2027-02-07', '初二', 'off'],
+    ['2027-02-08', '初三', 'off'], ['2027-02-09', '初四', 'off'], ['2027-02-10', '初五', 'off'],
+    ['2027-02-11', '初六', 'off'], ['2027-02-12', '初七', 'off'], ['2027-02-13', '初八', 'off'],
+    ['2027-02-14', '春节后补班', 'work'],
+    ['2027-04-03', '清明节', 'off'], ['2027-04-04', '清明节', 'off'], ['2027-04-05', '清明节', 'off'],
+    ['2027-05-01', '劳动节', 'off'], ['2027-05-02', '劳动节', 'off'], ['2027-05-03', '劳动节', 'off'],
+    ['2027-05-04', '劳动节', 'off'], ['2027-05-05', '劳动节', 'off'],
+    ['2027-05-08', '劳动节补班', 'work'],
+    ['2027-06-09', '端午节', 'off'],
+    ['2027-09-15', '中秋节', 'off'],
+    ['2027-09-26', '国庆前补班', 'work'],
+    ['2027-10-01', '国庆节', 'off'], ['2027-10-02', '国庆节', 'off'], ['2027-10-03', '国庆节', 'off'],
+    ['2027-10-04', '国庆节', 'off'], ['2027-10-05', '国庆节', 'off'], ['2027-10-06', '国庆节', 'off'],
+    ['2027-10-07', '国庆节', 'off'],
+    ['2027-10-09', '国庆后补班', 'work'],
+  ],
+};
+
+const YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+function normalizeHoliday(h) {
+  const date = String((h && h.date) || '');
+  if (!YMD_RE.test(date)) return null;
+  const kind = h.kind === 'work' ? 'work' : 'off';
+  const half = kind === 'off' && /^\d{2}:\d{2}$/.test(String(h.half || '')) ? String(h.half) : '';
+  let asDow = null;
+  if (kind === 'work' && h.asDow !== null && h.asDow !== '' && h.asDow !== undefined) {
+    const n = Number(h.asDow);
+    if (Number.isInteger(n) && n >= 0 && n <= 6) asDow = n;
+  }
+  return { date, name: String(h.name || '').trim() || '假日', kind, half, asDow, custom: !!h.custom };
+}
+
+function builtinHolidays(year) {
+  return (HOLIDAY_BUILTIN[year] || []).map(([date, name, kind]) => normalizeHoliday({ date, name, kind }));
+}
+function allBuiltinHolidays() {
+  return Object.keys(HOLIDAY_BUILTIN).sort().reduce((acc, y) => acc.concat(builtinHolidays(Number(y))), []);
+}
+function sortHolidays(list) {
+  return list.slice().sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+}
+/** 某天的假期记录（放假 / 补班），没有则 null */
+function holidayOn(dateStr) {
+  const arr = state.holidays || [];
+  for (let i = 0; i < arr.length; i++) if (arr[i].date === dateStr) return arr[i];
+  return null;
+}
+const isHolidayOff = ds => { const h = holidayOn(ds); return !!h && h.kind !== 'work'; };
+const isMakeupWorkday = ds => { const h = holidayOn(ds); return !!h && h.kind === 'work'; };
+/** 半天放学时刻（'HH:MM'），整天放假返回 '' */
+function holidayHalf(ds) {
+  const h = holidayOn(ds);
+  return h && h.kind !== 'work' && h.half ? h.half : '';
+}
+/** 排课该看星期几：补班日可指定「按周几的课表」 */
+function scheduleDow(dateStr) {
+  const h = holidayOn(dateStr);
+  if (h && h.kind === 'work' && h.asDow !== null && h.asDow !== undefined) return Number(h.asDow);
+  return parseYmd(dateStr).getDay();
+}
+/** 假期标签 */
+function holidayTag(dateStr) {
+  const h = holidayOn(dateStr);
+  if (!h) return '';
+  if (h.kind === 'work') return `<span class="tag sky">补班</span>`;
+  if (h.half) return `<span class="tag amber">上到 ${esc(h.half)}</span>`;
+  return `<span class="tag rose">放假</span>`;
+}
+/** 一句话说明（日视图提示条） */
+function holidayBanner(dateStr) {
+  const h = holidayOn(dateStr);
+  if (!h) return '';
+  if (h.kind === 'work') {
+    const sw = scheduleDow(dateStr);
+    const same = sw === parseYmd(dateStr).getDay();
+    return `${h.name} · 补班上课${same ? '' : `，按${WEEK_CN[sw]}的课表`}`;
+  }
+  return h.half ? `${h.name} · 半天，${h.half} 放学` : `${h.name} · 放假`;
+}
+/** 我的页一行摘要 */
+function holidaySummary() {
+  const list = state.holidays || [];
+  if (!list.length) return '未收录，点此同步';
+  const ys = [...new Set(list.map(h => String(h.date).slice(0, 4)))].sort();
+  const off = list.filter(h => h.kind !== 'work').length;
+  const work = list.length - off;
+  return `${ys.join('、')} 年 · ${off} 天假${work ? ` · ${work} 天补班` : ''}`;
+}
+/** 用于排课的判断：今天及以后才自动跳过，历史课程不动 */
+function holidayBlocks(dateStr, periodNo) {
+  if (state.settings.holidaySkip === false) return false;
+  if (dateStr < todayYmd()) return false;
+  const h = holidayOn(dateStr);
+  if (!h || h.kind === 'work') return false;
+  if (!h.half) return true;
+  return getPeriod(periodNo).start >= h.half;   // 半天：放学后的节次不上
+}
+
+/* ---------------- 节假日数据合并与同步 ---------------- */
+/** 用一批新数据覆盖对应年份（保留用户自定义项与未涉及的年份） */
+function applyHolidayData(list, opts) {
+  const incoming = (list || []).map(normalizeHoliday).filter(Boolean);
+  if (!incoming.length) return 0;
+  const years = new Set(incoming.map(h => h.date.slice(0, 4)));
+  const kept = (state.holidays || []).filter(h => h.custom || !years.has(String(h.date).slice(0, 4)));
+  const customDates = new Set(kept.filter(h => h.custom).map(h => h.date));
+  const merged = kept.concat(incoming.filter(h => !customDates.has(h.date)).map(h => ({ ...h, custom: false })));
+  const seen = new Set();
+  state.holidays = sortHolidays(merged.filter(h => (seen.has(h.date) ? false : (seen.add(h.date), true))));
+  if (!opts || opts.stamp !== false) state.meta.holidaySyncAt = Date.now();
+  return incoming.length;
+}
+
+const HOLIDAY_API = 'https://timor.tech/api/holiday/year/';
+/** 仓库里的整合数据（一次拿全部年份），走国内可用的镜像 */
+const HOLIDAY_BUNDLES = [
+  'https://cdn.jsdelivr.net/gh/user269/kechou@main/holidays.json',
+  'https://ghfast.top/https://raw.githubusercontent.com/user269/kechou/main/holidays.json',
+  'https://gh-proxy.com/https://raw.githubusercontent.com/user269/kechou/main/holidays.json',
+  'https://raw.githubusercontent.com/user269/kechou/main/holidays.json',
+];
+
+function parseHolidayPayload(text) {
+  const j = JSON.parse(text);
+  const map = (j && (j.holiday || j.days)) || null;
+  if (!map || typeof map !== 'object') throw new Error('数据格式不对');
+  const out = [];
+  Object.keys(map).forEach(k => {
+    const v = map[k];
+    if (!v || !YMD_RE.test(String(v.date || ''))) return;
+    out.push({
+      date: v.date,
+      name: v.name || v.target || '假日',
+      kind: v.holiday === false ? 'work' : 'off',
+    });
+  });
+  return out;
+}
+
+async function fetchWithTimeout(url, ms) {
+  const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timer = setTimeout(() => { if (ctrl) ctrl.abort(); }, ms || 8000);
+  try {
+    const r = await fetch(url, { cache: 'no-store', signal: ctrl ? ctrl.signal : undefined });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return await r.text();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** 同步：先拉仓库整合数据，缺哪年再用公共接口补 */
+async function syncHolidayData() {
+  const y = new Date().getFullYear();
+  const want = [y, y + 1];
+  const collected = [];
+  const years = new Set();
+  const errors = [];
+  const custom = String(state.settings.holidaySource || '').trim();
+  const bundles = (custom ? [custom] : []).concat(HOLIDAY_BUNDLES);
+
+  for (const url of bundles) {
+    if (years.has(String(y))) break;
+    try {
+      const list = parseHolidayPayload(await fetchWithTimeout(url, 8000));
+      list.forEach(h => { collected.push(h); years.add(h.date.slice(0, 4)); });
+    } catch (e) {
+      errors.push(`${url.slice(0, 42)}… ${e && e.message ? e.message : '失败'}`);
+    }
+  }
+  for (const year of want) {
+    if (years.has(String(year))) continue;
+    const url = HOLIDAY_API + year;
+    try {
+      const list = parseHolidayPayload(await fetchWithTimeout(url, 8000));
+      list.forEach(h => { collected.push(h); years.add(h.date.slice(0, 4)); });
+    } catch (e) {
+      errors.push(`${year} 年接口 ${e && e.message ? e.message : '失败'}`);
+    }
+  }
+  if (!collected.length) return { ok: false, errors };
+  const n = applyHolidayData(collected);
+  save();
+  return { ok: true, count: n, years: [...years].sort(), errors };
+}
+
+/* ============================================================
    总课表（母版）与调休
    ============================================================ */
 const WM_LIST = ['all', 'odd', 'even'];
@@ -192,12 +409,27 @@ function syncFromMaster(dry) {
     DOW_ORDER.forEach(dow => {
       const date = dateOfDow(ws, dow);
       const par = weekParity(date);
+      // 补班日可以「按周五的课表」上课
+      const lookDow = scheduleDow(date);
       state.periods.forEach(p => {
-        const allCell = state.master[masterKey(dow, p.no, 'all')];
-        const parCell = state.master[masterKey(dow, p.no, par)];
-        const cell = allCell || parCell;
-        const cellWeek = allCell ? 'all' : (parCell ? par : 'all');
         const exist = state.lessons.find(l => l.date === date && l.period === p.no);
+        // 法定假日不排课：今天及以后才自动跳过，历史课程保持原样
+        if (holidayBlocks(date, p.no)) {
+          if (exist && exist.auto) {
+            res.removed++;
+            if (dry) return;
+            state.lessons = state.lessons.filter(l => l.id !== exist.id);
+          } else if (exist) {
+            res.manual++;
+          }
+          return;
+        }
+        let cell = state.master[masterKey(lookDow, p.no, 'all')] || state.master[masterKey(lookDow, p.no, par)];
+        let cellWeek = state.master[masterKey(lookDow, p.no, 'all')] ? 'all' : par;
+        if (!cell && lookDow !== dow) {
+          cell = state.master[masterKey(dow, p.no, 'all')] || state.master[masterKey(dow, p.no, par)];
+          cellWeek = state.master[masterKey(dow, p.no, 'all')] ? 'all' : par;
+        }
         if (cell) {
           if (!exist) {
             res.added++;
@@ -437,6 +669,8 @@ function defaultSettings() {
     extendTypeId: 'self',      // 延长课时按哪个类型的单价计价（默认自习）
     termStart: '',             // 学期第一周的周一（用于周次编号与单双周判定）
     termWeeks: 20,             // 学期总周数
+    holidaySkip: true,         // 排课时跳过法定假日（半天只排到放学时刻）
+    holidaySource: '',         // 自定义节假日同步源（留空用内置候选）
     // 调休规则：某类周的某天只上半天，被截掉的课平移到同周另一天
     makeup: {
       enabled: true,
@@ -462,7 +696,8 @@ let state = {
   swaps: [],
   master: {},           // 总课表模板：`星期#节次#周次` → { typeId, klass, subject }
   adjusts: [],          // 调休记录
-  meta: { seeded: false, notified: {} },
+  holidays: allBuiltinHolidays(),   // 法定节假日（放假 / 补班），可自行增删改
+  meta: { seeded: false, notified: {}, holidaySyncAt: 0 },
 };
 
 function save() {
@@ -489,6 +724,9 @@ function load() {
       swaps: Array.isArray(data.swaps) ? data.swaps : [],
       master: (data.master && typeof data.master === 'object') ? data.master : {},
       adjusts: Array.isArray(data.adjusts) ? data.adjusts : [],
+      holidays: Array.isArray(data.holidays) && data.holidays.length
+        ? sortHolidays(data.holidays.map(normalizeHoliday).filter(Boolean))
+        : allBuiltinHolidays(),
       meta: { ...state.meta, ...(data.meta || {}) },
     };
     return true;
@@ -1101,13 +1339,22 @@ function renderHome() {
   }
 
   // 今日课程
+  const hdToday = holidayOn(t);
+  const hdTip = hdToday
+    ? `<div class="hd-tip ${hdToday.kind === 'work' ? 'work' : ''}">
+        <span class="hd-tip-t">${esc(holidayBanner(t))}</span>
+        <button class="hd-tip-b" data-act="open-holidays">调整</button>
+      </div>`
+    : '';
   let todayHtml = '';
   if (!todayList.length) {
     todayHtml = `
       <div class="empty">
         ${ic('cal', 40)}
-        <div class="t">今天没有课程安排</div>
-        <div class="s">可以导入课表，或手动添加一节课</div>
+        <div class="t">${hdToday && hdToday.kind !== 'work' ? `${esc(hdToday.name)} · 今天不上课` : '今天没有课程安排'}</div>
+        <div class="s">${hdToday && hdToday.kind !== 'work'
+          ? (hdToday.half ? `上到 ${esc(hdToday.half)}，之后的课已跳过` : '好好休息，假期课程不会计入课时')
+          : '可以导入课表，或手动添加一节课'}</div>
         <button class="btn outline sm mt16" data-act="open-import">${ic('upload', 15)} 导入课表</button>
       </div>`;
   } else {
@@ -1228,6 +1475,7 @@ function renderHome() {
         <div class="card-title"><span class="dot"></span>今日课程</div>
         <div class="card-more" data-act="go-schedule">全部 ${ic('right', 13)}</div>
       </div>
+      ${hdTip}
       ${todayHtml}
     </div>
 
@@ -1331,6 +1579,16 @@ function dayView(dateStr) {
     }
   }
 
+  // 法定假日 / 补班
+  const hd = holidayOn(dateStr);
+  let hdBanner = '';
+  if (hd) {
+    const cls = hd.kind === 'work' ? 'mint' : (hd.half ? 'amber' : 'rose');
+    const ico = hd.kind === 'work' ? 'swap' : (hd.half ? 'clock' : 'spark');
+    hdBanner = `<div class="info-banner ${cls}" style="margin-bottom:12px">${ic(ico, 16)}
+      <div>${esc(holidayBanner(dateStr))}${hd.custom ? ' <span class="tiny muted">（已自定义）</span>' : ''}</div></div>`;
+  }
+
   if (!list.length) {
     // 本周不上：同星期几在邻近单/双周有课
     let off = null;
@@ -1343,13 +1601,15 @@ function dayView(dateStr) {
       if (!off || diff < off.diff) off = { diff, mode: l.weekMode };
     });
 
-    return `${adjBanner}<div class="card">
+    return `${adjBanner}${hdBanner}<div class="card">
       <div class="empty">
         ${ic('cal', 40)}
-        <div class="t">${fmtMD(dateStr)} 没有课程</div>
-        <div class="s">${off
-          ? `本周是${parityLabel(dPar)}，${parityLabel(off.mode)}的课不在本周`
-          : '点击右上角导入课表，或手动添加'}</div>
+        <div class="t">${hd && hd.kind !== 'work' ? `${esc(hd.name)} · 今天不上课` : `${fmtMD(dateStr)} 没有课程`}</div>
+        <div class="s">${hd && hd.kind !== 'work'
+          ? (hd.half ? `上到 ${esc(hd.half)}，之后的课已跳过` : '法定假日，排课时可自动跳过')
+          : (off
+            ? `本周是${parityLabel(dPar)}，${parityLabel(off.mode)}的课不在本周`
+            : '点击右上角导入课表，或手动添加')}</div>
         <div class="hstack" style="justify-content:center;margin-top:16px">
           <button class="btn outline sm" data-act="add-lesson" data-date="${dateStr}">${ic('plus', 14)} 添加课程</button>
         </div>
@@ -1361,7 +1621,7 @@ function dayView(dateStr) {
   const cnt = dayCount(dateStr);
 
   return `
-    ${adjBanner}
+    ${adjBanner}${hdBanner}
     <div class="card" style="padding:14px 16px">
       <div class="hstack">
         <div style="flex:1">
@@ -1434,7 +1694,13 @@ function weekView(ws) {
   </div>
   <div class="weekgrid-wrap"><div class="weekgrid-scroll"><div class="weekgrid">
     <div class="wg-head"></div>
-    ${days.map(d => `<div class="wg-head ${ymd(d) === tStr ? 'today' : ''}"><span style="font-size:10px">${WEEK_SHORT[d.getDay()]}</span><b>${d.getDate()}</b></div>`).join('')}`;
+    ${days.map(d => {
+      const ds = ymd(d);
+      const hd = holidayOn(ds);
+      const cls = hd ? (hd.kind === 'work' ? 'wg-work' : 'wg-off') : '';
+      const mark = hd ? `<em class="wg-hd">${hd.kind === 'work' ? '补' : (hd.half ? '半' : '假')}</em>` : '';
+      return `<div class="wg-head ${ds === tStr ? 'today' : ''} ${cls}"><span style="font-size:10px">${WEEK_SHORT[d.getDay()]}</span><b>${d.getDate()}</b>${mark}</div>`;
+    }).join('')}`;
 
   periods.forEach(p => {
     html += `<div class="wg-time"><b>${p.short}</b><span>${p.start}</span></div>`;
@@ -1442,7 +1708,9 @@ function weekView(ws) {
       const ds = ymd(d);
       const l = state.lessons.find(x => x.date === ds && x.period === p.no);
       if (!l) {
-        if (adj && d.getDay() === adjDow && adjPeriods.has(p.no)) {
+        if (holidayBlocks(ds, p.no)) {
+          html += `<div class="wg-cell wg-free wg-off" data-act="add-lesson" data-date="${ds}" data-period="${p.no}"><span>假</span></div>`;
+        } else if (adj && d.getDay() === adjDow && adjPeriods.has(p.no)) {
           html += `<div class="wg-cell wg-free wg-adj" data-act="add-lesson" data-date="${ds}" data-period="${p.no}"><span>调${adjToShort}</span></div>`;
         } else {
           const g = ghost[`${d.getDay()}#${p.no}`];
@@ -1862,6 +2130,225 @@ function renderMakeupRule() {
   });
 }
 
+/* ---------------- 法定节假日页 ---------------- */
+let hdDraft = null;        // 正在编辑的一条
+let hdIsNew = false;
+let hdSyncing = false;
+
+function openHolidaysSheet() {
+  hdDraft = null;
+  renderHolidays();
+}
+
+function holidayRowHtml(h) {
+  const d = parseYmd(h.date);
+  const sub = h.kind === 'work'
+    ? `补班上课${h.asDow !== null && h.asDow !== undefined ? ` · 按${WEEK_CN[Number(h.asDow)]}课表` : ''}`
+    : (h.half ? `放半天 · ${h.half} 放学` : '放假 · 全天');
+  return `<div class="hd-row" data-act="hd-edit" data-date="${h.date}">
+    <div class="hd-d"><b>${h.date.slice(5)}</b><span>周${WEEK_SHORT[d.getDay()]}</span></div>
+    <div class="hd-c">
+      <div class="t">${esc(h.name)}${h.custom ? '<span class="tag gray">自定义</span>' : ''}</div>
+      <div class="s">${sub}</div>
+    </div>
+    ${holidayTag(h.date)}
+    ${ic('right', 14)}
+  </div>`;
+}
+
+function renderHolidays() {
+  const list = state.holidays || [];
+  const ys = [...new Set(list.map(h => String(h.date).slice(0, 4)))].sort();
+  const offN = list.filter(h => h.kind !== 'work').length;
+  const workN = list.length - offN;
+  const syncAt = Number(state.meta.holidaySyncAt) || 0;
+  const thisYear = String(new Date().getFullYear());
+
+  const groups = ys.map(y => {
+    const items = list.filter(h => String(h.date).slice(0, 4) === y);
+    return `<div class="hd-year">${y} 年${y === thisYear ? '<em>今年</em>' : ''}<span>${items.filter(h => h.kind !== 'work').length} 天假 · ${items.filter(h => h.kind === 'work').length} 天补班</span></div>
+      <div class="hd-list">${items.map(holidayRowHtml).join('')}</div>`;
+  }).join('');
+
+  openSheet({
+    title: '法定节假日',
+    body: `
+      <div class="hd-hero">
+        <div class="hd-hero-top">
+          <div>
+            <div class="hd-hero-n">${offN}<span>天放假</span></div>
+            <div class="hd-sub">${ys.length ? ys.join(' / ') + ' 年' : '暂无数据'}${workN ? ` · 另有 ${workN} 天补班` : ''}</div>
+          </div>
+          <span class="tag ${syncAt ? 'mint' : 'gray'}">${syncAt ? '已同步' : '内置数据'}</span>
+        </div>
+        <div class="hd-acts">
+          <button class="btn sm" data-act="hd-sync" ${hdSyncing ? 'disabled' : ''}>${ic('download', 14)} ${hdSyncing ? '同步中…' : '同步最新'}</button>
+          <button class="btn ghost sm" data-act="hd-reset">恢复内置</button>
+          <button class="btn ghost sm" data-act="hd-add">${ic('plus', 14)} 添加</button>
+        </div>
+        <div class="tiny muted" style="margin-top:9px;line-height:1.6">
+          ${syncAt ? `上次同步 ${fmtShortTime(syncAt)}` : '使用随应用内置的放假安排'}
+          · 点任意一天可改日期、改名、设半天
+        </div>
+      </div>
+
+      <div class="rows" style="margin-bottom:16px">
+        <div class="row">
+          <div class="ri" style="background:var(--brand-soft);color:var(--brand)">${ic('cal', 17)}</div>
+          <div class="rc"><div class="t">排课时跳过假期</div><div class="s">半天只排到放学时刻，补班日按指定星期上课</div></div>
+          <div class="switch ${state.settings.holidaySkip !== false ? 'on' : ''}" data-act="hd-toggle-skip"></div>
+        </div>
+      </div>
+
+      ${groups || `<div class="empty" style="padding:26px 0">
+        <div class="t">还没有任何节假日</div>
+        <div class="s">点「同步最新」或「添加」手动录入</div>
+      </div>`}
+      <div class="tiny muted" style="margin-top:14px;line-height:1.7">
+        放假安排依据国务院办公厅通知整理：内置 2026–2027 年，联网可同步最新年份。<br>
+        你手动改过的条目会标记为「自定义」，再次同步时不会被覆盖。
+      </div>
+    `,
+    footer: `<button class="btn ghost" data-close>关闭</button>`,
+  });
+}
+
+function renderHolidayEditor() {
+  const d = hdDraft;
+  openSheet({
+    title: hdIsNew ? '添加假日' : `编辑假日 · ${fmtMD(d.date)}`,
+    body: `
+      <div class="field">
+        <div class="field-label">日期</div>
+        <input class="input" type="date" id="hdDate" value="${d.date}">
+      </div>
+      <div class="field">
+        <div class="field-label">名称 <span class="hint">元旦、校运会、家长会…</span></div>
+        <input class="input" id="hdName" value="${esc(d.name)}" placeholder="假日名称" maxlength="14" autocomplete="off">
+      </div>
+      <div class="field">
+        <div class="field-label">类型</div>
+        <div class="segmented">
+          <button class="${d.kind !== 'work' ? 'on' : ''}" data-act="hd-kind" data-v="off">放假</button>
+          <button class="${d.kind === 'work' ? 'on' : ''}" data-act="hd-kind" data-v="work">补班上课</button>
+        </div>
+      </div>
+      ${d.kind === 'work' ? `
+        <div class="field">
+          <div class="field-label">按哪天的课表 <span class="hint">不选就按当天星期</span></div>
+          <div class="period-grid">
+            ${[1, 2, 3, 4, 5, 6, 0].map(x =>
+              `<button class="period-cell ${d.asDow !== null && Number(d.asDow) === x ? 'on' : ''}" data-act="hd-dow" data-d="${x}">${WEEK_SHORT[x]}</button>`
+            ).join('')}
+          </div>
+        </div>` : `
+        <div class="field">
+          <div class="field-label">上到几点 <span class="hint">留空 = 整天放假</span></div>
+          <input class="input" type="time" id="hdHalf" value="${d.half || ''}">
+        </div>`}
+      <div class="tiny muted" style="line-height:1.7">
+        改完回到课表页点「铺到本学期」，今天及以后的假期课程会自动跳过；已经过去的日期不会改动。
+      </div>
+    `,
+    footer: hdIsNew
+      ? `<button class="btn ghost" data-close>取消</button><button class="btn" data-act="hd-save">添加</button>`
+      : `<button class="btn ghost" data-act="hd-del">删除</button><button class="btn" data-act="hd-save">保存</button>`,
+  });
+}
+
+/* ---------------- 节假日的增删改与同步 ---------------- */
+function openHolidayEditor(dateStr) {
+  const h = dateStr ? holidayOn(dateStr) : null;
+  hdIsNew = !h;
+  hdDraft = h
+    ? { ...h, _orig: h.date }
+    : { date: dateStr || todayYmd(), name: '', kind: 'off', half: '', asDow: null, custom: true, _orig: '' };
+  renderHolidayEditor();
+}
+
+function captureHolidayForm() {
+  if (!hdDraft) return;
+  const de = $('#hdDate');
+  if (de && YMD_RE.test(de.value)) hdDraft.date = de.value;
+  const ne = $('#hdName');
+  if (ne) hdDraft.name = ne.value.trim();
+  const he = $('#hdHalf');
+  if (he) hdDraft.half = he.value || '';
+}
+
+function saveHolidayDraft() {
+  captureHolidayForm();
+  const d = hdDraft;
+  if (!d) return;
+  if (!YMD_RE.test(d.date)) return toast('请选择日期', 'alert');
+  const item = normalizeHoliday({ ...d, name: d.name || '假日', custom: true });
+  const others = (state.holidays || []).filter(h => h.date !== d._orig);
+  if (others.some(h => h.date === item.date)) return toast(`${fmtMD(item.date)} 已经有一条记录`, 'alert');
+  const idx = (state.holidays || []).findIndex(h => h.date === d._orig);
+  if (idx >= 0) state.holidays[idx] = item;
+  else state.holidays.push(item);
+  state.holidays = sortHolidays(state.holidays);
+  save();
+  hdDraft = null;
+  renderHolidays();
+  render();
+  toast(`${fmtMD(item.date)} ${item.name} 已保存`, 'check');
+}
+
+function deleteHolidayDraft() {
+  const d = hdDraft;
+  if (!d) return;
+  const run = () => {
+    state.holidays = (state.holidays || []).filter(h => h.date !== d._orig);
+    save();
+    hdDraft = null;
+    renderHolidays();
+    render();
+    toast('已删除该条目');
+  };
+  if (!d._orig) { run(); return; }
+  confirmModal({
+    title: '删除这一条',
+    desc: `确定删除 <b>${fmtMD(d._orig)} ${esc(d.name)}</b>？排课时会按普通日期处理。`,
+    okText: '删除', danger: true,
+    onDone: v => { if (v) run(); },
+  });
+}
+
+async function doSyncHolidays() {
+  if (hdSyncing) return;
+  hdSyncing = true;
+  renderHolidays();
+  let res;
+  try {
+    res = await syncHolidayData();
+  } catch (e) {
+    res = { ok: false, errors: [String((e && e.message) || e)] };
+  }
+  hdSyncing = false;
+  renderHolidays();
+  render();
+  if (res.ok) toast(`已同步 ${res.years.join('、')} 年共 ${res.count} 天`, 'check');
+  else toast('同步失败，可继续用内置数据', 'alert');
+}
+
+function resetHolidayData() {
+  confirmModal({
+    title: '恢复内置安排',
+    desc: `用应用内置的放假安排覆盖已收录的年份。<br>你手动改过、标记为「自定义」的条目会保留。`,
+    okText: '恢复',
+    onDone: v => {
+      if (!v) return;
+      const n = applyHolidayData(allBuiltinHolidays(), { stamp: false });
+      state.meta.holidaySyncAt = 0;
+      save();
+      renderHolidays();
+      render();
+      toast(`已恢复为内置的 ${n} 天安排`, 'reset');
+    },
+  });
+}
+
 /* ============================================================
    基础 UI：toast / sheet / modal
    ============================================================ */
@@ -2154,6 +2641,12 @@ function renderMine() {
         <div class="rv">${state.periods.length} 节</div>
         ${ic('right', 15)}
       </div>
+      <div class="row" data-act="open-holidays">
+        <div class="ri" style="background:var(--rose-soft);color:var(--rose)">${ic('cal', 17)}</div>
+        <div class="rc"><div class="t">法定节假日</div><div class="s">${esc(holidaySummary())}</div></div>
+        <div class="rv">${state.settings.holidaySkip === false ? '不跳过' : ''}</div>
+        ${ic('right', 15)}
+      </div>
       <div class="row" data-act="open-makeup-rule">
         <div class="ri" style="background:var(--rose-soft);color:var(--rose)">${ic('swap', 17)}</div>
         <div class="rc"><div class="t">调休规则</div><div class="s">${esc(makeupSummary())}</div></div>
@@ -2234,8 +2727,8 @@ function renderMine() {
 /* ============================================================
    帮助 · 说明 · 关于
    ============================================================ */
-const APP_VERSION = '1.0.12';
-const APP_BUILD = '2026-11-11';
+const APP_VERSION = '1.0.13';
+const APP_BUILD = '2026-11-12';
 
 let helpTab = 'faq';                       // faq | guide | about
 const helpOpen = new Set(['0-0']);         // 展开的问答（key: 组序-条序）
@@ -2304,6 +2797,15 @@ const FAQ_GROUPS = [
         go: { act: 'periods', text: '打开作息表' },
       },
       {
+        q: '法定节假日是自动同步的吗？',
+        a: `我的 → <b>法定节假日</b>：内置 2026–2027 年的放假与补班安排，点「同步最新」可联网取最新年份。<br>每一条都能改：点开可改<b>名称、日期</b>，放假还能设<b>半天放学</b>；也能手动添加校运会、家长会这类只有你们学校才有的日子。改过的条目会标「自定义」，再次同步不会被覆盖。`,
+        go: { act: 'holidays', text: '打开法定节假日' },
+      },
+      {
+        q: '假日和补班日会怎么影响排课？',
+        a: `打开「排课时跳过假期」（默认开启）后点「铺到本学期」：<b>放假日</b>不生成课；<b>半天</b>只排到放学时刻，之后的节次自动空出；<b>补班日</b>照常上课，还可以指定「按周五的课表」来排。<br>只影响<b>今天及以后</b>的日期，已经过去的课不会被改动。`,
+      },
+      {
         q: '怎么把课表发给同事，或换到另一台手机？',
         a: `我的 →「导入导出课表」，导出得到一段纯文本（一行一节，含单双周和 +20分 延长）。对方粘贴进去导入即可，还能勾选「同时铺到本学期」。`,
         go: { act: 'io', text: '打开导入导出' },
@@ -2350,7 +2852,7 @@ const GUIDE_STEPS = [
   },
   {
     t: '第 4 步 · 搭一张总课表',
-    s: `总课表是每周的模板：点格子选课、班级和<b>周次</b>（每周/单周/双周），有拖堂就顺手填<b>延长课时</b>。填完点「铺到本学期」，整个学期的课就排好了。`,
+    s: `总课表是每周的模板：点格子选课、班级和<b>周次</b>（每周/单周/双周），有拖堂就顺手填<b>延长课时</b>。填完点「铺到本学期」，整个学期的课就排好了。<br>铺之前先去「我的 → 法定节假日」看一眼，放假与补班的日子会自动跳过或按指定星期排。`,
     go: ['master', '打开总课表'],
   },
   {
@@ -2371,6 +2873,7 @@ const GUIDE_STEPS = [
 ];
 
 const CHANGELOG = [
+  { v: '1.0.13', d: '2026-11-12', items: ['新增法定节假日：内置 2026–2027 年放假与补班安排', '可改日期名称、设半天放学，联网可同步最新年份', '铺课表自动跳过假期，补班日按指定星期的课表上课'] },
   { v: '1.0.12', d: '2026-11-11', items: ['备用更新地址换成实测可用的镜像', '移除已失效的旧镜像域名'] },
   { v: '1.0.11', d: '2026-11-11', items: ['修复国内网络下检查更新失败（域名被污染）', '更新清单与安装包都改为多地址依次尝试', '检查失败可直接填自己的更新源'] },
   { v: '1.0.10', d: '2026-11-11', items: ['更新源改为正式仓库 user269/kechou', '新增开源仓库：源码、构建脚本与发布流程', '签名密码改为本地文件读取，不再写进脚本'] },
@@ -2979,6 +3482,7 @@ function helpGo(go) {
     case 'term': openTermSheet(); break;
     case 'remind': openRemindSheet(); break;
     case 'makeup': openMakeupRuleSheet(); break;
+    case 'holidays': openHolidaysSheet(); break;
     case 'io': openScheduleIO('export'); break;
     case 'backup': exportData(); break;
     case 'clear': openClearSheet(); break;
@@ -4788,6 +5292,34 @@ document.addEventListener('click', e => {
     /* 调休 */
     case 'open-makeup': openMakeupSheet(); break;
     case 'open-makeup-rule': openMakeupRuleSheet(); break;
+
+    /* 法定节假日 */
+    case 'open-holidays': openHolidaysSheet(); break;
+    case 'hd-add': openHolidayEditor(''); break;
+    case 'hd-edit': openHolidayEditor(el.dataset.date); break;
+    case 'hd-kind':
+      captureHolidayForm();
+      hdDraft.kind = el.dataset.v === 'work' ? 'work' : 'off';
+      if (hdDraft.kind === 'off') hdDraft.asDow = null;
+      renderHolidayEditor();
+      break;
+    case 'hd-dow': {
+      captureHolidayForm();
+      const dd = Number(el.dataset.d);
+      hdDraft.asDow = Number(hdDraft.asDow) === dd ? null : dd;
+      renderHolidayEditor();
+      break;
+    }
+    case 'hd-save': saveHolidayDraft(); break;
+    case 'hd-del': deleteHolidayDraft(); break;
+    case 'hd-sync': doSyncHolidays(); break;
+    case 'hd-reset': resetHolidayData(); break;
+    case 'hd-toggle-skip':
+      state.settings.holidaySkip = state.settings.holidaySkip === false;
+      save();
+      renderHolidays();
+      render();
+      break;
     case 'makeup-one': {
       const r = applyMakeup(el.dataset.ws);
       if (!r.ok) { toast(r.reason === 'empty' ? '这一周没有可平移的课' : '这一周已调休过'); break; }

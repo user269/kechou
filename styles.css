@@ -1650,3 +1650,112 @@ textarea.input { resize: none; line-height: 1.6; font-weight: 500; font-size: 13
   font-size: 11.5px; color: var(--ink-3); line-height: 1.75;
   word-break: break-all;
 }
+
+/* ============================================================
+   法定节假日
+   ============================================================ */
+.info-banner.mint { background: var(--mint-soft); color: #07795C; }
+.info-banner.rose { background: var(--rose-soft); color: #B42318; }
+.info-banner.amber { background: var(--amber-soft); color: #7A4B00; }
+
+/* 首页今日假期条 */
+.hd-tip {
+  display: flex; align-items: center; gap: 8px;
+  margin: 10px 0 2px;
+  padding: 8px 10px 8px 12px;
+  border-radius: 12px;
+  background: var(--rose-soft);
+  border: 1px solid #FBD7D4;
+}
+.hd-tip.work { background: var(--sky-soft); border-color: #CDE8F7; }
+.hd-tip-t {
+  flex: 1; min-width: 0;
+  font-size: 12px; font-weight: 650; color: #B42318;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.hd-tip.work .hd-tip-t { color: #026AA2; }
+.hd-tip-b {
+  flex: 0 0 auto;
+  border: 0; background: rgba(255,255,255,.72);
+  color: inherit; font-size: 11px; font-weight: 700;
+  padding: 4px 9px; border-radius: 8px; font-family: inherit;
+}
+.hd-tip-b:active { transform: scale(.96); }
+
+/* 节假日面板 */
+.hd-hero {
+  background: linear-gradient(135deg, #FFF6F5, #FFFBF3);
+  border: 1px solid #FBE3DD;
+  border-radius: 18px;
+  padding: 14px 15px;
+  margin-bottom: 16px;
+}
+.hd-hero-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.hd-hero-n {
+  font-size: 24px; font-weight: 800; color: #B42318;
+  letter-spacing: -.6px; line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+}
+.hd-hero-n span { font-size: 12.5px; font-weight: 650; color: #9A6B62; margin-left: 5px; letter-spacing: 0; }
+.hd-sub { font-size: 11.5px; color: #9A6B62; margin-top: 3px; font-weight: 550; }
+.hd-acts { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+.hd-acts .btn { flex: 0 0 auto; }
+
+.hd-year {
+  display: flex; align-items: baseline; gap: 8px;
+  font-size: 12.5px; font-weight: 750; color: var(--ink-2);
+  margin: 16px 2px 8px;
+}
+.hd-year em {
+  font-style: normal; font-size: 10px; font-weight: 700;
+  background: var(--brand-soft); color: #2C43B8;
+  padding: 1px 6px; border-radius: 6px;
+}
+.hd-year span { margin-left: auto; font-size: 10.5px; font-weight: 550; color: var(--ink-4); }
+
+.hd-list { display: flex; flex-direction: column; gap: 6px; }
+.hd-row {
+  display: flex; align-items: center; gap: 10px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  padding: 9px 11px;
+  transition: background .15s;
+}
+.hd-row:active { background: #F7F9FC; }
+.hd-d {
+  flex: 0 0 auto; width: 46px;
+  display: flex; flex-direction: column; align-items: center; gap: 1px;
+}
+.hd-d b {
+  font-size: 13px; font-weight: 750; color: var(--ink);
+  font-variant-numeric: tabular-nums; letter-spacing: -.3px;
+}
+.hd-d span { font-size: 9.5px; color: var(--ink-4); font-weight: 600; }
+.hd-c { flex: 1; min-width: 0; }
+.hd-c .t {
+  font-size: 13px; font-weight: 650; color: var(--ink);
+  display: flex; align-items: center; gap: 5px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.hd-c .t .tag { flex: 0 0 auto; font-size: 9.5px; padding: 1px 5px; }
+.hd-c .s {
+  font-size: 11px; color: var(--ink-4); margin-top: 2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* 周视图表头的假期徽标 */
+.wg-head { position: relative; }
+.wg-head .wg-hd {
+  position: absolute; top: 0; right: -1px;
+  font-style: normal; font-size: 8px; font-weight: 700;
+  line-height: 1.35; padding: 0 3px; border-radius: 4px;
+  background: var(--rose-soft); color: #B42318;
+}
+.wg-head.wg-work .wg-hd { background: var(--sky-soft); color: #026AA2; }
+.wg-head.wg-off b { color: #B42318; }
+.wg-free.wg-off {
+  background: repeating-linear-gradient(45deg, #FFF8F7, #FFF8F7 5px, #FEF1EF 5px, #FEF1EF 10px);
+  border-color: #F8DCD8;
+}
+.wg-free.wg-off span { font-size: 9px; font-weight: 650; color: #C98C84; }
