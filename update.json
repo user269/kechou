@@ -1,18 +1,18 @@
 {
-  "versionCode": 19,
-  "versionName": "1.0.18",
+  "versionCode": 20,
+  "versionName": "1.0.19",
   "notes": [
-    "有新版本会主动提醒：后台每 6 小时查一次，弹通知，点通知直接进更新页",
-    "页面被系统回收后自动重开，不再整个应用退出",
-    "打包链支持原生库，并按 16KB 页对齐校验（当前版本暂未内含 .so）"
+    "课时费页新增「月账单」：一键复制成文字，或导出 CSV 表格",
+    "作息表可一键套用初中 / 高中 / 小学三套常见时间",
+    "第 9 节有课时套用短作息会被拦下，避免时间算错"
   ],
   "apk": {
-    "url": "https://github.com/user269/kechou/releases/download/v1.0.18/kebao-1.0.18.apk",
-    "size": 374004,
+    "url": "https://github.com/user269/kechou/releases/download/v1.0.19/kebao-1.0.19.apk",
+    "size": 378102,
     "mirrors": [
-      "https://ghfast.top/https://github.com/user269/kechou/releases/download/v1.0.18/kebao-1.0.18.apk",
-      "https://gh-proxy.com/https://github.com/user269/kechou/releases/download/v1.0.18/kebao-1.0.18.apk",
-      "https://ghproxy.net/https://github.com/user269/kechou/releases/download/v1.0.18/kebao-1.0.18.apk"
+      "https://ghfast.top/https://github.com/user269/kechou/releases/download/v1.0.19/kebao-1.0.19.apk",
+      "https://gh-proxy.com/https://github.com/user269/kechou/releases/download/v1.0.19/kebao-1.0.19.apk",
+      "https://ghproxy.net/https://github.com/user269/kechou/releases/download/v1.0.19/kebao-1.0.19.apk"
     ]
   },
   "web": {
@@ -21,5 +21,5 @@
     "size": 0,
     "notes": []
   },
-  "updated": "2026-11-12T08:48:48Z"
+  "updated": "2026-11-12T11:05:44Z"
 }

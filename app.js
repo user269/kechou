@@ -632,6 +632,61 @@ const DEFAULT_PERIODS = [
 
 const TYPE_COLORS = ['#3B5BFD', '#0FAF87', '#F59E0B', '#7C5CFF', '#0BA5EC', '#EF6C4D', '#E0457B', '#14A3A3'];
 
+/**
+ * 常见作息预设：一次换掉整张作息表，省得一条条填时间。
+ * no 由下标生成，这里只写「叫什么、几点到几点」。
+ */
+const PERIOD_PRESETS = [
+  {
+    id: 'junior',
+    name: '初中 · 8 节',
+    desc: '早读 + 上午 4 节 + 下午 4 节，40 分钟一节',
+    periods: [
+      { name: '早读',  short: '早', start: '07:20', end: '07:50' },
+      { name: '第1节', short: '1', start: '08:00', end: '08:40' },
+      { name: '第2节', short: '2', start: '08:50', end: '09:30' },
+      { name: '第3节', short: '3', start: '09:50', end: '10:30' },
+      { name: '第4节', short: '4', start: '10:40', end: '11:20' },
+      { name: '第5节', short: '5', start: '14:00', end: '14:40' },
+      { name: '第6节', short: '6', start: '14:50', end: '15:30' },
+      { name: '第7节', short: '7', start: '15:50', end: '16:30' },
+      { name: '第8节', short: '8', start: '16:40', end: '17:20' },
+    ],
+  },
+  {
+    id: 'senior',
+    name: '高中 · 9 节 + 晚自习',
+    desc: '早读 + 白天 9 节 + 晚自习 2 节，45 分钟一节',
+    periods: [
+      { name: '早读',   short: '早',  start: '06:50', end: '07:20' },
+      { name: '第1节',  short: '1',  start: '07:40', end: '08:25' },
+      { name: '第2节',  short: '2',  start: '08:35', end: '09:20' },
+      { name: '第3节',  short: '3',  start: '09:40', end: '10:25' },
+      { name: '第4节',  short: '4',  start: '10:35', end: '11:20' },
+      { name: '第5节',  short: '5',  start: '11:30', end: '12:15' },
+      { name: '第6节',  short: '6',  start: '14:00', end: '14:45' },
+      { name: '第7节',  short: '7',  start: '14:55', end: '15:40' },
+      { name: '第8节',  short: '8',  start: '15:50', end: '16:35' },
+      { name: '第9节',  short: '9',  start: '16:45', end: '17:30' },
+      { name: '晚自习1', short: '晚1', start: '18:40', end: '19:25' },
+      { name: '晚自习2', short: '晚2', start: '19:35', end: '20:20' },
+    ],
+  },
+  {
+    id: 'primary',
+    name: '小学 · 6 节',
+    desc: '上午 4 节 + 下午 2 节，40 分钟一节',
+    periods: [
+      { name: '第1节', short: '1', start: '08:00', end: '08:40' },
+      { name: '第2节', short: '2', start: '08:50', end: '09:30' },
+      { name: '第3节', short: '3', start: '09:50', end: '10:30' },
+      { name: '第4节', short: '4', start: '10:40', end: '11:20' },
+      { name: '第5节', short: '5', start: '14:00', end: '14:40' },
+      { name: '第6节', short: '6', start: '14:50', end: '15:30' },
+    ],
+  },
+];
+
 function defaultTypes() {
   return [
     { id: 'regular', name: '正课',   unit: 'period', price: 65,  factor: 1,   color: '#3B5BFD', tierable: true,  enabled: true },
@@ -2536,6 +2591,26 @@ function renderPay() {
       </div>
     </div>
 
+    <div class="card">
+      <div class="card-head">
+        <div class="card-title"><span class="dot" style="background:var(--violet)"></span>月账单</div>
+        <div class="card-more">${m.count ? `${m.count} 节` : '本月暂无'}</div>
+      </div>
+      <div class="rows">
+        <div class="row" data-act="stmt-copy" style="padding-left:0;padding-right:0">
+          <div class="ri" style="background:var(--brand-soft);color:var(--brand)">${ic('doc', 17)}</div>
+          <div class="rc"><div class="t">复制成文字</div><div class="s">粘到微信发给教务，或自己存档</div></div>
+          ${ic('right', 15)}
+        </div>
+        <div class="row" data-act="stmt-csv" style="padding-left:0;padding-right:0;border-top:1px solid var(--line-2)">
+          <div class="ri" style="background:var(--mint-soft);color:var(--mint)">${ic('download', 17)}</div>
+          <div class="rc"><div class="t">导出表格</div><div class="s">CSV 文件，Excel / WPS 可直接打开求和</div></div>
+          ${ic('right', 15)}
+        </div>
+      </div>
+      <div class="help-note" style="margin-top:10px">只统计本机记过的课；还没上的课按计划时长计入「待上」。</div>
+    </div>
+
     <div class="section-label">
       <span>课时明细</span>
       <span style="font-weight:500;color:var(--ink-3)">${m.rows.length} 条</span>
@@ -2720,7 +2795,7 @@ function renderMine() {
 /* ============================================================
    帮助 · 说明 · 关于
    ============================================================ */
-const APP_VERSION = '1.0.18';
+const APP_VERSION = '1.0.19';
 const APP_BUILD = '2026-11-12';
 
 let helpTab = 'faq';                       // faq | guide | about
@@ -2866,6 +2941,7 @@ const GUIDE_STEPS = [
 ];
 
 const CHANGELOG = [
+  { v: '1.0.19', d: '2026-11-12', items: ['课时费页新增「月账单」：一键复制成文字，或导出表格（Excel / WPS 直接打开）', '作息表可一键套用初中 / 高中 / 小学三套常见时间', '已经有课排在第 9 节时，套用短作息会被拦下，避免时间算错'] },
   { v: '1.0.18', d: '2026-11-12', items: ['新版本不用自己想起来看了：后台每 6 小时查一次，有更新会弹通知', '点通知直接打开更新页，一路点到装好', '页面被系统回收后会自动重开，不再整应用退出'] },
   { v: '1.0.17', d: '2026-11-12', items: ['修复在 Android 17 上打开就退出的问题', '万一还是闪退，下次打开会显示原因，可复制发给我'] },
   { v: '1.0.16', d: '2026-11-12', items: ['适配 Android 16：状态栏不会再压住页面顶上那一条', '返回键换成系统新机制，全面屏手势返回更跟手', '最低支持仍是 Android 6.0，老机器不受影响'] },
@@ -4536,6 +4612,16 @@ function openPeriodsSheet() {
     body: `
       <div class="info-banner" style="margin-bottom:14px">${ic('clock', 16)}
         <div>这里的时间决定课表显示、课前提醒和<b>自习时长</b>，改完会自动同步。</div></div>
+      <div class="field-label">套用常见作息</div>
+      <div class="rows" style="background:#F7F9FC;border-radius:14px;margin-bottom:16px">
+        ${PERIOD_PRESETS.map((p, i) => `
+          <div class="row" data-act="period-preset" data-p="${p.id}"
+               style="padding:11px 13px${i ? ';border-top:1px solid var(--line-2)' : ''}">
+            <div class="rc"><div class="t" style="font-size:14px">${p.name}</div><div class="s">${p.desc}</div></div>
+            ${ic('right', 15)}
+          </div>`).join('')}
+      </div>
+      <div class="field-label">逐节时间</div>
       ${state.periods.map((p, i) => `
         <div class="hstack" style="gap:8px;margin-bottom:8px">
           <div style="flex:0 0 62px;font-size:13px;font-weight:650;color:var(--ink-2)">${esc(p.name)}</div>
@@ -4546,6 +4632,49 @@ function openPeriodsSheet() {
       <div style="height:6px"></div>
     `,
     footer: `<button class="btn ghost" data-close>取消</button><button class="btn" data-act="period-save">保存</button>`,
+  });
+}
+
+function applyPeriodPreset(id) {
+  const p = PERIOD_PRESETS.find(x => x.id === id);
+  if (!p) return;
+
+  // 已经排到第 9 节的课，套用只有 6 节的作息后会被算成第 1 节，金额和提醒时间都会错。
+  // 与其偷偷改，不如直接拦下来让人先调课表。
+  const used = Math.max(
+    0,
+    ...state.lessons.map(l => Number(l.period) || 0),
+    ...Object.keys(state.master || {}).map(k => Number(String(k).split('#')[1]) || 0)
+  );
+  if (used > p.periods.length) {
+    toast(`这套作息只有 ${p.periods.length} 节，你有课排在第 ${used} 节`);
+    return;
+  }
+
+  confirmModal({
+    title: `套用「${p.name}」`,
+    desc: `将用这套时间替换当前作息表的 ${p.periods.length} 个节次，已有课程的时间跟着变。`,
+    okText: '套用',
+    onDone: ok => {
+      if (!ok) return;
+      // 和手动保存作息一样，把「跟着作息走」的课时长同步过去
+      const before = {};
+      state.periods.forEach(x => { before[x.no] = minutesBetween(x.start, x.end); });
+      state.periods = p.periods.map((x, i) => ({
+        no: i + 1, name: x.name, short: x.short, start: x.start, end: x.end,
+      }));
+      state.lessons.forEach(l => {
+        if (l.durAuto === false) return;
+        const auto = l.durAuto === true || Number(l.dur) === before[l.period] || !l.dur;
+        if (!auto) return;
+        l.dur = periodMinutes(l.period);
+        l.durAuto = true;
+      });
+      save();
+      render();
+      openPeriodsSheet();
+      toast('已套用作息', 'check');
+    },
   });
 }
 
@@ -4928,6 +5057,92 @@ function saveTextAs(fileName, content, mime, desc) {
     } catch (e) { /* 环境不允许，退回下载 */ }
   }
   download();
+}
+
+/* ---------- 月账单：能交出去的那种 ---------- */
+
+/** 纯文本月报，直接粘到微信里发给教务，或者自己存档 */
+function monthStatementText(ym) {
+  const m = calcMonth(ym);
+  const t = state.teacher;
+  const who = [t.school, t.name, t.subject].filter(Boolean).join(' · ');
+  const L = [];
+  L.push(`课酬月报 · ${monthLabel(ym)}`);
+  if (who) L.push(who);
+  L.push('');
+  L.push(`总课酬　${money(m.total)}`);
+  L.push(`课程　　${m.count} 节（已完成 ${m.doneCount} 节，待上 ${m.planCount} 节）`);
+  L.push(`已完成　${money(m.doneFee)}`);
+  if (m.planCount) L.push(`待上　　${money(m.planFee)}`);
+  L.push(`折课时　${m.km} 节（按 45 分钟折算）`);
+
+  if (m.byType.length) {
+    L.push('');
+    L.push('按类型');
+    m.byType.forEach(x => {
+      const cnt = x.count ? `${x.count} 节` : '仅延长';
+      L.push(`　${x.name}　${cnt}　${money(x.fee)}`);
+    });
+  }
+
+  if (m.rows.length) {
+    L.push('');
+    L.push('逐节明细');
+    m.rows.forEach(r => {
+      const pt = periodTime(r.lesson.period);
+      L.push(`　${r.lesson.date.slice(5)} ${weekdayCN(r.lesson.date)} ${pt.name}　`
+        + `${r.lesson.klass || '未命名'}·${r.type.name}　${money(r.subtotal)}`);
+    });
+  }
+
+  L.push('');
+  L.push(`生成于 ${todayYmd()} · 课酬`);
+  return L.join('\n');
+}
+
+/** CSV 单元格：含逗号/引号/换行时才加引号 */
+function csvCell(v) {
+  const s = String(v == null ? '' : v);
+  return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+
+/** 表格版月报：Excel / WPS / 石墨都能直接打开，数字列保持纯数字好求和 */
+function monthStatementCsv(ym) {
+  const m = calcMonth(ym);
+  const head = ['日期', '星期', '节次', '时间', '班级', '科目', '类型',
+    '数量', '计价单位', '单价', '班级系数', '延长分钟', '小计', '状态'];
+  const lines = [head.map(csvCell).join(',')];
+  m.rows.forEach(r => {
+    const pt = periodTime(r.lesson.period);
+    lines.push([
+      r.lesson.date,
+      weekdayCN(r.lesson.date),
+      pt.name,
+      `${pt.start}-${pt.end}`,
+      r.lesson.klass || '',
+      r.lesson.subject || state.teacher.subject || '',
+      r.type.name,
+      r.qty,
+      r.unitLabel,
+      r.unitPrice,
+      r.classFactor,
+      r.extend ? r.extend.minutes : 0,
+      r.subtotal,
+      r.done ? '已完成' : '待上',
+    ].map(csvCell).join(','));
+  });
+  // 合计行：金额列放在「小计」那一列
+  lines.push(['合计', '', '', '', '', '', '', '', '', '', '', '', m.total, '']
+    .map(csvCell).join(','));
+  return '\ufeff' + lines.join('\r\n');   // 带 BOM，Excel 才认得中文
+}
+
+function copyMonthStatement() {
+  copyText(monthStatementText(payMonth), '月报已复制，去粘贴吧');
+}
+
+function exportMonthStatement() {
+  saveTextAs(`课酬账单_${payMonth}.csv`, monthStatementCsv(payMonth), 'text/csv', '账单表格');
 }
 
 function exportData() {
@@ -5794,6 +6009,11 @@ document.addEventListener('click', e => {
 
     case 'export-data': exportData(); break;
     case 'import-data': importDataFile(); break;
+
+    /* 月账单：复制文字 / 导出表格 */
+    case 'stmt-copy': copyMonthStatement(); break;
+    case 'stmt-csv': exportMonthStatement(); break;
+    case 'period-preset': applyPeriodPreset(el.dataset.p); break;
 
     /* 课表文本：快捷导入导出 */
     case 'open-schedule-io': openScheduleIO(el.dataset.ie || 'export'); break;
