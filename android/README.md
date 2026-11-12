@@ -19,7 +19,7 @@ build/课酬-<版本>.apk    约 350 KB，已签名，可直接安装
 
 ## 原生层做了什么
 
-网页本身已经能算课时费，但浏览器里有三件事做不到。这个壳把它们补上了：
+网页本身已经能算课时费，但浏览器里有几件事做不到。这个壳把它们补上了：
 
 | 能力 | 浏览器版 | 安装包版 |
 |---|---|---|
@@ -29,6 +29,8 @@ build/课酬-<版本>.apk    约 350 KB，已签名，可直接安装
 | 返回键 | — | 先关弹层 → 再回首页 → 都没有才退出（双击确认） |
 | 存储 | localStorage | localStorage，域名固定为 `https://kebao.local`，不会被清 |
 | 更新 | 无 | 检查 → 下载 → 装资源包或整包，见下文 |
+| 更新提醒 | 无 | 后台每 6 小时查一次，有新版本发通知，点通知直达更新页 |
+| 页面崩溃 | 刷新即可 | 存储不动，自动重开页面，不整应用退出 |
 
 ### 系统栏是怎么让位的
 
@@ -51,6 +53,35 @@ targetSdk 36 起预测性返回默认开启，系统只调 `OnBackInvokedCallbac
 
 `USE_EXACT_ALARM` 权限让 Android 13+ 默认授予精确闹钟能力，不需要用户手动去系统设置里开。
 如果某些定制系统仍拦截，App 内「我的 → 提醒设置 → 准点提醒」会给出跳转入口。
+
+### 原生库与 16KB 页
+
+工程目前**没有**原生库（纯 Java + WebView），但打包链已经按「随时能放 .so」来搭：
+
+- `app/src/main/jniLibs/<abi>/*.so` 会在 `build.sh` 第 7 步被打进 `lib/<abi>/`，
+  以 **STORED（不压缩）** 方式写入；清单里 `android:extractNativeLibs="false"`，
+  运行时直接从 APK mmap，不往数据目录解压。
+- `zipalign -P 16 4` 把未压缩的 `.so` 对齐到 **16KB** 边界（16KB 页设备的硬要求）。
+  注意 `-P` 和 `-p` 不能同时用，所以这里不再传 `-p`。
+- 构建最后跑 `tools/check-16k.py`，逐项检查：是否 STORED、包内偏移是否 16KB 对齐、
+  ELF 的 `PT_LOAD` 段 `p_align` 是否 ≥ 16384。任何一项不过，构建直接失败——
+  避免打出「能装、一加载就崩」的包。
+
+自己编 .so 时要带 `-Wl,-z,max-page-size=16384`；拿来的第三方 .so 如果 `p_align` 只有 4096，
+只能找厂商换 16KB 版本。详见 `jniLibs/README.md`。
+
+### 后台更新通知
+
+应用不常开，更新提示交给系统闹钟：`UpdateCheckReceiver` 每 **6 小时**醒一次，并发拉
+`Updater.FALLBACK_MANIFESTS` 里的几个清单，取 `versionCode` 最大的那份跟本机比；
+比本机大且这个版本还没提醒过，就往「版本更新」渠道发一条通知。
+
+- 用 `setAndAllowWhileIdle` + 每次醒来重排下一次，而不是 `setInexactRepeating`（后者在 Doze 下几乎不触发）；
+  读失败 1 小时后再试，正常则 6 小时。
+- `BootReceiver` 在开机 / 升级 / 改时间后一起重排（更新检查和上课提醒的闹钟都会被系统清掉）。
+- 点通知 → `MainActivity` 带 `EXTRA_OPEN_UPDATE` → 页面 `onPageFinished` 后调
+  `window.__kebaoOpenUpdate()`，直接打开更新面板并静默检查一次。
+- 同一版本只提醒一次（`kebao_update_check.notifiedCode`），不重复打扰。
 
 ## 重新构建
 
@@ -86,19 +117,25 @@ android/
 ├── build.sh                          一键构建脚本
 ├── keystore.jks                      签名证书
 ├── app/src/main/
-│   ├── AndroidManifest.xml           权限、Activity、两个 Receiver
+│   ├── AndroidManifest.xml           权限、Activity、三个 Receiver
 │   ├── assets/                       网页资源（构建时从上级同步）
+│   ├── jniLibs/                      原生库放置处（见该目录 README）
 │   ├── res/                          图标、主题、字符串
 │   └── java/com/kebao/lessonpay/
-│       ├── MainActivity.java         WebView 壳、资源拦截、返回键、状态栏
+│       ├── App.java                  Application，最早装上崩溃记录
+│       ├── MainActivity.java         WebView 壳、资源拦截、返回键、状态栏、渲染进程重建
 │       ├── WebBridge.java            暴露给网页的原生接口
 │       ├── Updater.java              拉更新清单、下载解压、装 APK、失败回滚
+│       ├── UpdateCheckReceiver.java  后台每 6 小时查新版本并发通知
 │       ├── ApkProvider.java          content:// 把安装包交给系统安装器
 │       ├── AlarmScheduler.java       提醒计划 → 系统闹钟
 │       ├── ReminderReceiver.java     闹钟到点发通知
 │       ├── BootReceiver.java         开机/改时间后重新排期
+│       ├── CrashLog.java             闪退堆栈落盘 + 下次启动弹窗
 │       └── Notifier.java             通知渠道与下发
-└── tools/                            图标源文件
+└── tools/
+    ├── check-16k.py                  16KB 页合规校验
+    └── *.svg / *.png                 图标源文件
 ```
 
 ## 网页与原生怎么对接

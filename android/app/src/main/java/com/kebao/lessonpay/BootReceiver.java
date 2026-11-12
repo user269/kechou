@@ -19,6 +19,8 @@ public class BootReceiver extends BroadcastReceiver {
                 || Intent.ACTION_TIMEZONE_CHANGED.equals(a)
                 || Intent.ACTION_MY_PACKAGE_REPLACED.equals(a)) {
             AlarmScheduler.reschedule(ctx);
+            // 更新检查的闹钟同样会被系统清掉，一起补上
+            UpdateCheckReceiver.reschedule(ctx);
         }
     }
 }

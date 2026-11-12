@@ -14,6 +14,7 @@ import android.view.ViewGroup;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.WindowManager;
+import android.webkit.RenderProcessGoneDetail;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
@@ -43,6 +44,8 @@ import java.util.Map;
 public class MainActivity extends Activity {
 
     public static final String HOST = "kebao.local";
+    /** 从「有新版本」通知点进来时带的标记，进页面后自动打开更新面板。 */
+    public static final String EXTRA_OPEN_UPDATE = "kebao.openUpdate";
     private static final int REQ_FILE = 0x1001;
     private static final int REQ_NOTIFY = 0x1002;
     /** 页面底色，与 styles.css 里的 --bg 保持一致。 */
@@ -53,6 +56,8 @@ public class MainActivity extends Activity {
     private ValueCallback<Uri[]> fileCallback;
     private long lastBackAt = 0L;
     private OnBackInvokedCallback backCallback;
+    private FrameLayout rootView;
+    private boolean pendingOpenUpdate = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -65,10 +70,19 @@ public class MainActivity extends Activity {
         registerBackCallback();
         CrashLog.step(this, "窗口与返回键就绪");
 
+        // 后台更新检查的闹钟：只有快到期时才重排，不会每次冷启动都重置
+        try {
+            UpdateCheckReceiver.ensureScheduled(this);
+        } catch (Throwable ignored) { }
+
+        pendingOpenUpdate = getIntent() != null
+                && getIntent().getBooleanExtra(EXTRA_OPEN_UPDATE, false);
+
         // 上次换资源中途被杀掉的话，先把备份还原，避免加载到半截目录
         Updater.recover(this);
 
         FrameLayout root = new FrameLayout(this);
+        rootView = root;
         root.setBackgroundColor(APP_BG);
 
         try {
@@ -141,6 +155,29 @@ public class MainActivity extends Activity {
         v.stopLoading();
         v.clearCache(true);
         loadIndex();
+    }
+
+    /** 渲染进程没了就换一个新的顶上，界面重新加载一次，数据都在 localStorage 里不丢。 */
+    private void rebuildWeb() {
+        try {
+            WebView old = web;
+            web = null;
+            if (rootView != null && old != null) rootView.removeView(old);
+            if (old != null) old.destroy();
+
+            WebView fresh = new WebView(this);
+            fresh.setLayoutParams(new FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+            fresh.setBackgroundColor(APP_BG);
+            configureWebView(fresh);
+            web = fresh;
+            if (rootView != null) rootView.addView(fresh, 0);   // 压到底层，别盖住底部那条白
+            CrashLog.step(this, "WebView 已重建");
+            loadIndex();
+        } catch (Throwable e) {
+            CrashLog.step(this, "WebView 重建失败：" + e);
+            if (rootView != null) rootView.addView(errorView("页面重启失败", e));
+        }
     }
 
     private String readWeb(String name) throws IOException {
@@ -297,6 +334,24 @@ public class MainActivity extends Activity {
                 try { startActivity(new Intent(Intent.ACTION_VIEW, u)); } catch (Exception ignored) { }
                 return true;
             }
+
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                // 页面就绪后再打开更新面板，否则 JS 还没跑起来
+                if (!pendingOpenUpdate) return;
+                pendingOpenUpdate = false;
+                view.evaluateJavascript(
+                        "window.__kebaoOpenUpdate&&window.__kebaoOpenUpdate()", null);
+            }
+
+            @Override
+            public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
+                // 渲染进程被系统回收（低内存、或新系统的内存限制）时，默认行为是整个应用崩掉。
+                // 这里返回 true 表示自己处理：重建一个干净的 WebView 继续用。
+                CrashLog.step(MainActivity.this, "WebView 渲染进程被回收");
+                runOnUiThread(MainActivity.this::rebuildWeb);
+                return true;
+            }
         });
 
         w.setWebChromeClient(new WebChromeClient() {
@@ -450,6 +505,18 @@ public class MainActivity extends Activity {
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
+        boolean openUpdate = intent != null
+                && intent.getBooleanExtra(EXTRA_OPEN_UPDATE, false);
+        if (openUpdate) {
+            // 应用已经在运行：不重载页面，直接把更新面板调出来
+            if (web != null) {
+                web.evaluateJavascript(
+                        "window.__kebaoOpenUpdate&&window.__kebaoOpenUpdate()", null);
+            } else {
+                pendingOpenUpdate = true;
+            }
+            return;
+        }
         if (web != null) web.reload();
     }
 

@@ -2720,7 +2720,7 @@ function renderMine() {
 /* ============================================================
    帮助 · 说明 · 关于
    ============================================================ */
-const APP_VERSION = '1.0.17';
+const APP_VERSION = '1.0.18';
 const APP_BUILD = '2026-11-12';
 
 let helpTab = 'faq';                       // faq | guide | about
@@ -2866,6 +2866,7 @@ const GUIDE_STEPS = [
 ];
 
 const CHANGELOG = [
+  { v: '1.0.18', d: '2026-11-12', items: ['新版本不用自己想起来看了：后台每 6 小时查一次，有更新会弹通知', '点通知直接打开更新页，一路点到装好', '页面被系统回收后会自动重开，不再整应用退出'] },
   { v: '1.0.17', d: '2026-11-12', items: ['修复在 Android 17 上打开就退出的问题', '万一还是闪退，下次打开会显示原因，可复制发给我'] },
   { v: '1.0.16', d: '2026-11-12', items: ['适配 Android 16：状态栏不会再压住页面顶上那一条', '返回键换成系统新机制，全面屏手势返回更跟手', '最低支持仍是 Android 6.0，老机器不受影响'] },
   { v: '1.0.15', d: '2026-11-12', items: ['「我的」页重新整理：分组更少，每行只说一件事', '调休规则与调课记录合并到「调课与调休」', '备份与恢复合成一个入口，清理课表单独成行', '更新页面只显示版本号和更新内容，去掉技术细节'] },
@@ -4855,6 +4856,11 @@ function handleNativeBack() {
 }
 if (IS_NATIVE) {
   window.__kebaoBack = handleNativeBack;
+  // 点「有新版本」通知进来：直接打开更新面板并静默检查一次
+  window.__kebaoOpenUpdate = function () {
+    try { openUpdateSheet(); checkUpdate(true); } catch (e) { }
+    return true;
+  };
   window.addEventListener('resize', () => {
     // 键盘弹起时保持页面不被顶飞
     if (document.activeElement && /INPUT|TEXTAREA/.test(document.activeElement.tagName)) {

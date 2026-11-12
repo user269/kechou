@@ -1,18 +1,18 @@
 {
-  "versionCode": 18,
-  "versionName": "1.0.17",
+  "versionCode": 19,
+  "versionName": "1.0.18",
   "notes": [
-    "修复在 Android 17 上打开就退出的问题",
-    "万一还是闪退：下次打开会弹窗显示原因，点「复制」发给我即可",
-    "其它系统保持原样，界面没有改动"
+    "有新版本会主动提醒：后台每 6 小时查一次，弹通知，点通知直接进更新页",
+    "页面被系统回收后自动重开，不再整个应用退出",
+    "打包链支持原生库，并按 16KB 页对齐校验（当前版本暂未内含 .so）"
   ],
   "apk": {
-    "url": "https://github.com/user269/kechou/releases/download/v1.0.17/kebao-1.0.17.apk",
-    "size": 369911,
+    "url": "https://github.com/user269/kechou/releases/download/v1.0.18/kebao-1.0.18.apk",
+    "size": 374004,
     "mirrors": [
-      "https://ghfast.top/https://github.com/user269/kechou/releases/download/v1.0.17/kebao-1.0.17.apk",
-      "https://gh-proxy.com/https://github.com/user269/kechou/releases/download/v1.0.17/kebao-1.0.17.apk",
-      "https://ghproxy.net/https://github.com/user269/kechou/releases/download/v1.0.17/kebao-1.0.17.apk"
+      "https://ghfast.top/https://github.com/user269/kechou/releases/download/v1.0.18/kebao-1.0.18.apk",
+      "https://gh-proxy.com/https://github.com/user269/kechou/releases/download/v1.0.18/kebao-1.0.18.apk",
+      "https://ghproxy.net/https://github.com/user269/kechou/releases/download/v1.0.18/kebao-1.0.18.apk"
     ]
   },
   "web": {
@@ -21,5 +21,5 @@
     "size": 0,
     "notes": []
   },
-  "updated": "2026-11-12T03:11:10Z"
+  "updated": "2026-11-12T08:48:48Z"
 }

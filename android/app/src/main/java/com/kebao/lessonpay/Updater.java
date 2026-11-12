@@ -46,7 +46,7 @@ public class Updater {
      * 注意不要用 jsDelivr 的 @main：分支地址带 12 小时 CDN 缓存，
      * 新版本发布后它还会继续吐旧清单，导致客户端永远认为「已是最新」。
      */
-    private static final String[] FALLBACK_MANIFESTS = {
+    static final String[] FALLBACK_MANIFESTS = {
             MANIFEST_URL,
             "https://ghfast.top/https://raw.githubusercontent.com/user269/kechou/main/update.json",
             "https://gh-proxy.com/https://raw.githubusercontent.com/user269/kechou/main/update.json",
