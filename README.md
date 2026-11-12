@@ -114,7 +114,7 @@ node tests/run-all.sh   # 或单独 node tests/ui.test.js
 **依赖**
 
 - JDK 17
-- Android SDK：`platforms/android-34`、`build-tools/34.0.0`
+- Android SDK：`platforms/android-37.0`（compileSdk 37）、`build-tools/37.0.0`
 
 **步骤**
 

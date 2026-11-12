@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ============================================================
 # 课酬 Android 安装包构建脚本
-# 依赖：JDK 17 + Android SDK（platforms/android-34、build-tools/34.0.0）
+# 依赖：JDK 17 + Android SDK（platforms/android-37.0、build-tools/37.0.0）
 # 用法：bash build.sh
 # ============================================================
 set -euo pipefail
@@ -13,22 +13,24 @@ SDK_WIN="$(cygpath -m "$SDK_POSIX" 2>/dev/null || echo "$SDK_POSIX")"
 JDK_POSIX="${JAVA_HOME:-/c/Program Files/Java/jdk-17}"
 JDK_WIN="$(cygpath -m "$JDK_POSIX" 2>/dev/null || echo "$JDK_POSIX")"
 
-BT_POSIX="$SDK_POSIX/build-tools/34.0.0"
-BT_WIN="$SDK_WIN/build-tools/34.0.0"
-PLATFORM_WIN="$SDK_WIN/platforms/android-34/android.jar"
+BT_POSIX="$SDK_POSIX/build-tools/37.0.0"
+BT_WIN="$SDK_WIN/build-tools/37.0.0"
+PLATFORM_WIN="$SDK_WIN/platforms/android-37.0/android.jar"
 
 APP="app/src/main"
 OUT="build"
 KS="keystore.jks"
 # 签名密码不写进仓库：优先读环境变量，其次读本地 android/.keystore-pass
 KS_PASS="${KS_PASS:-$(cat .keystore-pass 2>/dev/null || true)}"
-VERSION_NAME="1.0.15"
-VERSION_CODE="16"
+VERSION_NAME="1.0.16"
+VERSION_CODE="17"
+TARGET_SDK="36"
+COMPILE_SDK="37"
 APK_NAME="课酬-${VERSION_NAME}.apk"
 
 # ---------- 前置检查 ----------
-[ -f "$PLATFORM_WIN" ] || { echo "缺少 android.jar：$PLATFORM_WIN"; exit 1; }
-[ -f "$BT_POSIX/aapt2.exe" ] || { echo "缺少 build-tools/34.0.0"; exit 1; }
+[ -f "$PLATFORM_WIN" ] || { echo "缺少 android.jar（compileSdk $COMPILE_SDK）：$PLATFORM_WIN"; exit 1; }
+[ -f "$BT_POSIX/aapt2.exe" ] || { echo "缺少 build-tools/37.0.0"; exit 1; }
 [ -n "$KS_PASS" ] || { echo "缺少签名密码：把密码写入 android/.keystore-pass，或设置 KS_PASS 环境变量"; exit 1; }
 
 echo "==> 1/8 同步网页资源"
@@ -52,7 +54,7 @@ echo "==> 4/8 链接资源与清单 (aapt2 link)"
   --java "$OUT/gen" \
   -A "$APP/assets" \
   --min-sdk-version 23 \
-  --target-sdk-version 34 \
+  --target-sdk-version "$TARGET_SDK" \
   --version-code "$VERSION_CODE" \
   --version-name "$VERSION_NAME" \
   "$OUT/res.zip"

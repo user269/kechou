@@ -12,6 +12,9 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
 
 let current = '{}';   // 当前服务端返回的清单
 
+// 版本号从 app.js 里读，发版时不用回来改断言
+const VER = (fs.readFileSync(ROOT + '/app.js', 'utf8').match(/const APP_VERSION = '([^']+)'/) || [])[1];
+
 function dom0() {
   let html = fs.readFileSync(ROOT + '/index.html', 'utf8');
   html = html.replace(/<script[^>]*src=[^>]*><\/script>/g, '');
@@ -255,7 +258,7 @@ const NONE = JSON.stringify({
   const bw = bootWeb();
   const bi = bw.__api.localAppInfo();
   ok(bi.versionCode === Number.MAX_SAFE_INTEGER, '浏览器环境不提示整包', bi.versionCode);
-  ok(bw.__api.localAppInfo().versionName === '1.0.15', '版本名仍取自常量');
+  ok(bw.__api.localAppInfo().versionName === VER, '版本名仍取自常量', bw.__api.localAppInfo().versionName);
 
   /* ------------------------------------------------------------------ */
   console.log('\n【11】版本行接的是真检查');
@@ -266,7 +269,7 @@ const NONE = JSON.stringify({
   api.switchTab('mine');
   ok(!$(w, '#page-mine [data-act="open-help"][data-h="about"]').textContent.match(/检查更新/), '关于格里不再重复放置检查更新');
   const verRow = $(w, '#page-mine .mine-foot .ver');
-  ok(/v1\.0\.15 · 检查更新/.test(verRow.textContent), '版本行写明可检查更新', verRow.textContent.trim());
+  ok(new RegExp('v' + VER.replace(/\./g, '\\.') + ' · 检查更新').test(verRow.textContent), '版本行写明可检查更新', verRow.textContent.trim());
   verRow.click();
   await wait(30);
   ok(txt(w, '#sheetTitle') === '软件更新', '点击后切到更新面板', txt(w, '#sheetTitle'));

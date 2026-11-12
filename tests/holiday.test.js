@@ -225,9 +225,14 @@ ok(api.scheduleDow('2026-10-12') === 1, '普通周一仍是周一', api.schedule
 
 console.log('\n【15】版本号与更新记录');
 api.switchTab('mine');
-ok(/v1\.0\.15/.test(txt(w, '#page-mine .mine-foot')), '页脚版本号 1.0.15');
+const curVer = (txt(w, '#page-mine .mine-foot').match(/v\d+\.\d+\.\d+/) || [])[0];
+ok(!!curVer, '页脚有版本号', curVer);
 api.openHelp('about');
-ok(/1\.0\.13/.test(txt(w, '#sheetBody')), '关于页显示 1.0.14');
+ok(txt(w, '#sheetBody').includes(curVer), '关于页版本与页脚一致', curVer);
+// 更新记录默认只展开最近三条，法定节假日那条要展开后才看得到
+const logRow = w.document.querySelector('#sheetBody [data-act="log-toggle"]');
+ok(!!logRow, '更新记录可展开');
+if (logRow) logRow.click();
 ok(/法定节假日/.test(txt(w, '#sheetBody')), '更新记录提到法定节假日');
 
 console.log(`\n通过 ${pass} · 失败 ${fail}`);

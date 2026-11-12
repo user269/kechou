@@ -1,19 +1,18 @@
 {
-  "versionCode": 16,
-  "versionName": "1.0.15",
+  "versionCode": 17,
+  "versionName": "1.0.16",
   "notes": [
-    "「我的」页重新整理：分组更少，每行只说一件事",
-    "调休规则与调课记录合并为「调课与调休」",
-    "备份与恢复合成一个入口，清理课表单独成行",
-    "更新页面只显示版本号和更新内容，去掉技术细节"
+    "跟上最新的安卓系统（Android 16）：顶栏不会再被状态栏压住",
+    "返回键换成系统新机制，全面屏手势返回更跟手",
+    "手机最低仍是 Android 6.0，老机器不受影响"
   ],
   "apk": {
-    "url": "https://github.com/user269/kechou/releases/download/v1.0.15/kebao-1.0.15.apk",
-    "size": 365814,
+    "url": "https://github.com/user269/kechou/releases/download/v1.0.16/kebao-1.0.16.apk",
+    "size": 365813,
     "mirrors": [
-      "https://ghfast.top/https://github.com/user269/kechou/releases/download/v1.0.15/kebao-1.0.15.apk",
-      "https://gh-proxy.com/https://github.com/user269/kechou/releases/download/v1.0.15/kebao-1.0.15.apk",
-      "https://ghproxy.net/https://github.com/user269/kechou/releases/download/v1.0.15/kebao-1.0.15.apk"
+      "https://ghfast.top/https://github.com/user269/kechou/releases/download/v1.0.16/kebao-1.0.16.apk",
+      "https://gh-proxy.com/https://github.com/user269/kechou/releases/download/v1.0.16/kebao-1.0.16.apk",
+      "https://ghproxy.net/https://github.com/user269/kechou/releases/download/v1.0.16/kebao-1.0.16.apk"
     ]
   },
   "web": {
@@ -22,5 +21,5 @@
     "size": 0,
     "notes": []
   },
-  "updated": "2026-11-12T02:37:59Z"
+  "updated": "2026-11-12T02:58:06Z"
 }

@@ -4,11 +4,15 @@ import android.app.Activity;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
+import android.graphics.Insets;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowInsets;
+import android.view.WindowInsetsController;
 import android.view.WindowManager;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
@@ -19,6 +23,8 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
 import android.widget.Toast;
+import android.window.OnBackInvokedCallback;
+import android.window.OnBackInvokedDispatcher;
 
 import java.io.ByteArrayInputStream;
 import java.io.File;
@@ -44,11 +50,13 @@ public class MainActivity extends Activity {
     private WebBridge bridge;
     private ValueCallback<Uri[]> fileCallback;
     private long lastBackAt = 0L;
+    private OnBackInvokedCallback backCallback;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setupWindow();
+        registerBackCallback();
 
         // 上次换资源中途被杀掉的话，先把备份还原，避免加载到半截目录
         Updater.recover(this);
@@ -63,6 +71,8 @@ public class MainActivity extends Activity {
         configureWebView(web);
         root.addView(web);
         setContentView(root);
+
+        applyInsets(root);
 
         loadIndex();
 
@@ -127,12 +137,67 @@ public class MainActivity extends Activity {
 
     private void setupWindow() {
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
-        getWindow().setStatusBarColor(Color.parseColor("#F4F6FB"));
-        getWindow().setNavigationBarColor(Color.parseColor("#FFFFFF"));
 
-        int flags = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
-        if (Build.VERSION.SDK_INT >= 26) flags |= View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
-        getWindow().getDecorView().setSystemUiVisibility(flags);
+        if (Build.VERSION.SDK_INT >= 30) {
+            // Android 11 起统一按「边到边」处理，系统栏透明：
+            // targetSdk 35 以上系统本来就会强制边到边（statusBarColor 等接口失效），
+            // 与其等它被动生效，不如自己显式铺满再按 insets 让位，视觉在 11~16 上一致。
+            getWindow().setDecorFitsSystemWindows(false);
+            getWindow().setStatusBarColor(Color.TRANSPARENT);
+            getWindow().setNavigationBarColor(Color.TRANSPARENT);
+            getWindow().setStatusBarContrastEnforced(false);
+            getWindow().setNavigationBarContrastEnforced(false);
+
+            // 底色是浅色，状态栏与导航栏图标用深色
+            WindowInsetsController c = getWindow().getInsetsController();
+            if (c != null) {
+                int light = WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
+                        | WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS;
+                c.setSystemBarsAppearance(light, light);
+            }
+        } else {
+            getWindow().setStatusBarColor(Color.parseColor("#F4F6FB"));
+            getWindow().setNavigationBarColor(Color.parseColor("#FFFFFF"));
+            int flags = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+            if (Build.VERSION.SDK_INT >= 26) flags |= View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+            getWindow().getDecorView().setSystemUiVisibility(flags);
+        }
+    }
+
+    /**
+     * 边到边之后系统不再替我们让出系统栏，这里自己补：
+     * 上边留出状态栏高度（露出 #F4F6FB，与页面顶栏同色），下边留出导航栏/键盘的高度，
+     * 导航栏那块单独压一条白底，和页面底部标签栏接得上。
+     * Android 10 及以下窗口本来就没铺满，不需要处理。
+     */
+    private void applyInsets(final FrameLayout root) {
+        if (Build.VERSION.SDK_INT < 30) return;
+
+        final View navBand = new View(this);
+        navBand.setBackgroundColor(Color.WHITE);
+        root.addView(navBand, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, Gravity.BOTTOM));
+
+        root.setOnApplyWindowInsetsListener((v, insets) -> {
+            Insets bars = insets.getInsets(WindowInsets.Type.systemBars());
+            Insets ime = insets.getInsets(WindowInsets.Type.ime());
+            int bottom = Math.max(bars.bottom, ime.bottom);
+
+            FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) web.getLayoutParams();
+            if (lp.topMargin != bars.top || lp.bottomMargin != bottom) {
+                lp.topMargin = bars.top;
+                lp.bottomMargin = bottom;
+                web.setLayoutParams(lp);
+            }
+
+            FrameLayout.LayoutParams bp = (FrameLayout.LayoutParams) navBand.getLayoutParams();
+            if (bp.height != bars.bottom) {
+                bp.height = bars.bottom;
+                navBand.setLayoutParams(bp);
+            }
+            return insets;
+        });
+        root.requestApplyInsets();
     }
 
     private void configureWebView(WebView w) {
@@ -284,9 +349,23 @@ public class MainActivity extends Activity {
         super.onActivityResult(req, res, data);
     }
 
-    @Override
-    public void onBackPressed() {
-        if (web == null) { super.onBackPressed(); return; }
+    /**
+     * targetSdk 36 起预测性返回默认开启，系统只认 OnBackInvokedCallback，
+     * 老的 onBackPressed 不一定还会被调用，所以两个都挂上，按版本走。
+     */
+    private void registerBackCallback() {
+        if (Build.VERSION.SDK_INT < 33) return;
+        backCallback = this::handleBack;
+        getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                OnBackInvokedDispatcher.PRIORITY_DEFAULT, backCallback);
+    }
+
+    /** 先问网页：面板开着就关面板；没得关才走「再按一次退出」。 */
+    private void handleBack() {
+        if (web == null) {
+            finish();
+            return;
+        }
         web.evaluateJavascript(
                 "!!(window.__kebaoBack && window.__kebaoBack())",
                 value -> {
@@ -302,6 +381,11 @@ public class MainActivity extends Activity {
     }
 
     @Override
+    public void onBackPressed() {
+        handleBack();
+    }
+
+    @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
@@ -310,6 +394,10 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        if (backCallback != null && Build.VERSION.SDK_INT >= 33) {
+            getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(backCallback);
+            backCallback = null;
+        }
         if (web != null) {
             web.setWebChromeClient(null);
             web.destroy();

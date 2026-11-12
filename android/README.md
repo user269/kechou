@@ -15,7 +15,7 @@ build/课酬-<版本>.apk    约 350 KB，已签名，可直接安装
 2. 在手机上点开安装，首次会提示「未知来源应用」——在弹窗里允许一次即可。
 3. 首次启动时系统会询问通知权限，**务必允许**，否则课前提醒不会弹出。
 
-支持 Android 6.0 及以上（minSdk 23），targetSdk 34，已适配到 Android 15。
+支持 Android 6.0 及以上（minSdk 23），targetSdk 36，compileSdk 37，已适配到 Android 16。
 
 ## 原生层做了什么
 
@@ -30,6 +30,19 @@ build/课酬-<版本>.apk    约 350 KB，已签名，可直接安装
 | 存储 | localStorage | localStorage，域名固定为 `https://kebao.local`，不会被清 |
 | 更新 | 无 | 检查 → 下载 → 装资源包或整包，见下文 |
 
+### 系统栏是怎么让位的
+
+targetSdk 35 起，Android 15 会强制应用「边到边」显示：`setStatusBarColor()` 之类的接口失效，
+窗口直接铺满整屏，系统不再替应用让出状态栏。所以 `MainActivity.setupWindow()` 从 API 30 起
+自己调 `setDecorFitsSystemWindows(false)` 主动边到边，再用 `applyInsets()` 按 insets 给 WebView
+加 `topMargin`（状态栏高）和 `bottomMargin`（导航栏或键盘高）：状态栏那一块露出 `#F4F6FB`
+与页面顶栏同色，导航栏那一块单独压一条白色，和底部标签栏接得上。
+Android 10 及以下窗口本来就没铺满，保持原来的着色状态栏即可。
+
+targetSdk 36 起预测性返回默认开启，系统只调 `OnBackInvokedCallback`，老的 `onBackPressed()`
+不一定还会被调用。`registerBackCallback()` 在 API 33+ 注册回调、低版本仍走 `onBackPressed()`，
+两条路都汇到 `handleBack()`：先问网页有没有面板要关，再走「双击退出」。
+
 ### 提醒是怎么排的
 
 网页在每次数据变化后（新增课程、调课、改作息、改提醒时间）会把未来 15 天的提醒计划算好，
@@ -41,7 +54,7 @@ build/课酬-<版本>.apk    约 350 KB，已签名，可直接安装
 
 ## 重新构建
 
-需要 JDK 17 + Android SDK（`platforms/android-34`、`build-tools/34.0.0`）。
+需要 JDK 17 + Android SDK（`platforms/android-37.0`、`build-tools/37.0.0`）。
 本机 SDK 在临时目录，换机器时改 `build.sh` 顶部的 `ANDROID_SDK_ROOT` 即可。
 
 ```bash
