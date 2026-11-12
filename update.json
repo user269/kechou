@@ -1,17 +1,17 @@
 {
-  "versionCode": 13,
-  "versionName": "1.0.12",
+  "versionCode": 14,
+  "versionName": "1.0.13",
   "notes": [
-    "修复国内网络下检查更新失败（域名被污染）",
-    "更新清单与安装包都改为多地址依次尝试",
-    "检查失败可直接填自己的更新源"
+    "新增法定节假日：内置 2026–2027 年放假与补班安排",
+    "可改日期名称、设半天放学，联网可同步最新年份",
+    "铺课表自动跳过假期，补班日按指定星期的课表上课"
   ],
   "apk": {
-    "url": "https://github.com/user269/kechou/releases/download/v1.0.12/kebao-1.0.12.apk",
-    "size": 353526,
+    "url": "https://github.com/user269/kechou/releases/download/v1.0.13/kebao-1.0.13.apk",
+    "size": 361716,
     "mirrors": [
-      "https://cdn.jsdelivr.net/gh/user269/kechou@v1.0.12/apk/kebao-1.0.12.apk",
-      "https://ghfast.top/https://github.com/user269/kechou/releases/download/v1.0.12/kebao-1.0.12.apk"
+      "https://cdn.jsdelivr.net/gh/user269/kechou@v1.0.13/apk/kebao-1.0.13.apk",
+      "https://ghfast.top/https://github.com/user269/kechou/releases/download/v1.0.13/kebao-1.0.13.apk"
     ]
   },
   "web": {
