@@ -1198,7 +1198,7 @@ const TAB_META = {
   home: { title: () => greetingTitle(), sub: () => fmtFullDate(new Date()) },
   schedule: { title: () => '我的课表', sub: () => `${monthLabel(todayYmd().slice(0, 7))} · 本月 ${state.lessons.filter(l => l.date.startsWith(todayYmd().slice(0, 7))).length} 节课` },
   pay: { title: () => '课时费', sub: () => '自动结算 · 实时更新' },
-  mine: { title: () => '我的', sub: () => '计费 · 课表 · 数据' },
+  mine: { title: () => '我的', sub: () => '数据只保存在本机' },
 };
 
 function greetingTitle() {
@@ -1413,8 +1413,8 @@ function renderHome() {
     <div class="upd-tip" data-act="upd-open">
       <div class="ut-ic">${ic('download', 16)}</div>
       <div class="ut-txt">
-        <b>${UPD.kind === 'web' ? '界面资源有新版本' : '发现新版本 v' + esc(UPD.latest)}</b>
-        <span>${UPD.kind === 'web' ? '只替换界面，下载后重启即生效' : '完整安装包，下载后手动安装'}</span>
+        <b>${UPD.kind === 'web' ? '界面有更新' : `发现新版本 v${esc(UPD.latest)}`}</b>
+        <span>${UPD.kind === 'web' ? '点这里更新，重启后生效' : '点这里下载安装'}</span>
       </div>
       <span class="ut-btn">查看</span>
     </div>` : '';
@@ -2066,20 +2066,40 @@ function openMakeupSheet() {
   });
 }
 
-function openMakeupRuleSheet() {
-  draftMakeup = { ...makeupRule() };
-  renderMakeupRule();
+/** 调课与调休共用一张面板，顶部两个标签切换。 */
+let swapTab = 'rule';     // rule | log
+
+function openSwapCenter(tab) {
+  swapTab = tab === 'log' ? 'log' : 'rule';
+  if (swapTab === 'rule') draftMakeup = { ...makeupRule() };
+  renderSwapCenter();
 }
 
-function renderMakeupRule() {
+function renderSwapCenter() {
+  const isRule = swapTab === 'rule';
+  openSheet({
+    title: '调课与调休',
+    body: `
+      <div class="segmented" style="margin-bottom:16px">
+        <button class="${isRule ? 'on' : ''}" data-act="swap-tab" data-t="rule">调休规则</button>
+        <button class="${isRule ? '' : 'on'}" data-act="swap-tab" data-t="log">调课记录</button>
+      </div>
+      ${isRule ? makeupRuleHtml() : swapLogHtml()}`,
+    footer: isRule
+      ? `<button class="btn ghost" data-close>取消</button><button class="btn" data-act="makeup-save-rule">保存</button>`
+      : `<button class="btn ghost" data-close>关闭</button>`,
+  });
+}
+
+function openMakeupRuleSheet() { openSwapCenter('rule'); }
+function renderMakeupRule() { renderSwapCenter(); }
+
+function makeupRuleHtml() {
   const r = draftMakeup;
   const periods = state.periods;
-
-  openSheet({
-    title: '调休规则',
-    body: `
+  return `
       <div class="info-banner" style="margin-bottom:14px">${ic('info', 16)}
-        <div>按规则把某天放学后剩下的课，平移到<b>同一周</b>的另一天，节次保持不变。调休后这些课仍按原单价计费。</div></div>
+        <div>把某天放学前后的课挪到<b>同一周</b>的另一天，节次不变，照常计价。</div></div>
       <div class="field">
         <div class="row" style="background:#F7F9FC;border-radius:14px;padding:13px">
           <div class="rc"><div class="t" style="font-size:13.5px">启用调休规则</div><div class="s">关闭后总课表不显示快捷调休</div></div>
@@ -2124,10 +2144,7 @@ function renderMakeupRule() {
           <div class="switch ${r.includeNight ? 'on' : ''}" data-act="makeup-night"></div>
         </div>
       </div>
-      <div style="height:6px"></div>
-    `,
-    footer: `<button class="btn ghost" data-close>取消</button><button class="btn" data-act="makeup-save-rule">保存</button>`,
-  });
+      <div style="height:6px"></div>`;
 }
 
 /* ---------------- 法定节假日页 ---------------- */
@@ -2187,15 +2204,14 @@ function renderHolidays() {
           <button class="btn ghost sm" data-act="hd-add">${ic('plus', 14)} 添加</button>
         </div>
         <div class="tiny muted" style="margin-top:9px;line-height:1.6">
-          ${syncAt ? `上次同步 ${fmtShortTime(syncAt)}` : '使用随应用内置的放假安排'}
-          · 点任意一天可改日期、改名、设半天
+          点任意一天可以改名称、设半天放假
         </div>
       </div>
 
       <div class="rows" style="margin-bottom:16px">
         <div class="row">
           <div class="ri" style="background:var(--brand-soft);color:var(--brand)">${ic('cal', 17)}</div>
-          <div class="rc"><div class="t">排课时跳过假期</div><div class="s">半天只排到放学时刻，补班日按指定星期上课</div></div>
+          <div class="rc"><div class="t">排课时跳过假期</div><div class="s">半天只排到放学，补班日按指定星期上课</div></div>
           <div class="switch ${state.settings.holidaySkip !== false ? 'on' : ''}" data-act="hd-toggle-skip"></div>
         </div>
       </div>
@@ -2205,8 +2221,7 @@ function renderHolidays() {
         <div class="s">点「同步最新」或「添加」手动录入</div>
       </div>`}
       <div class="tiny muted" style="margin-top:14px;line-height:1.7">
-        放假安排依据国务院办公厅通知整理：内置 2026–2027 年，联网可同步最新年份。<br>
-        你手动改过的条目会标记为「自定义」，再次同步时不会被覆盖。
+        依据国务院放假通知整理；你手动改过的那几天，同步时不会被覆盖。
       </div>
     `,
     footer: `<button class="btn ghost" data-close>关闭</button>`,
@@ -2562,8 +2577,6 @@ function renderPay() {
 function renderMine() {
   const ym = todayYmd().slice(0, 7);
   const m = calcMonth(ym);
-  const notifyState = notifyPermissionState();
-  const notifyText = { granted: '已开启', denied: '已拒绝', default: '未开启', unsupported: '不支持' }[notifyState];
 
   const t0 = todayYmd();
   const wk = weekIndexOf(t0);
@@ -2582,8 +2595,14 @@ function renderMine() {
   }).length;
 
   const typeN = state.types.filter(x => x.enabled !== false).length;
-  const adjustN = state.adjusts.filter(a => !a.undone).length;
-  const meta = [state.teacher.school, state.teacher.subject].filter(Boolean).join(' · ') || '点击填写学校与科目';
+  const swapN = state.swaps.length;
+  const meta = [state.teacher.school, state.teacher.subject].filter(Boolean).join(' · ') || '填写学校与科目';
+
+  const offN = state.holidays.filter(h => h.kind !== 'work').length;
+  const workN = state.holidays.filter(h => h.kind === 'work').length;
+  const remindSub = state.settings.remindEnabled
+    ? `提前 ${state.settings.remindBefore} 分钟`
+    : '已关闭';
 
   $('#page-mine').innerHTML = `
     <div class="card mine-profile" data-act="edit-teacher">
@@ -2606,96 +2625,73 @@ function renderMine() {
       <div class="mt-row">
         <div class="mt-title">${ic('cal', 15)} 第 ${wk} 周 / 共 ${totalWk} 周</div>
         <span class="mt-badge ${par === 'even' ? 'even' : ''}">${parityLabel(par)}</span>
+        <span class="mt-chev">${ic('right', 14)}</span>
       </div>
       <div class="mt-bar"><i style="width:${termPct}%"></i></div>
-      <div class="mt-sub">${leftWk > 0 ? `学期已过 ${wk} 周，还剩 ${leftWk} 周` : '本学期已结束'} · 点此调整</div>
+      <div class="mt-sub">${leftWk > 0 ? `还剩 ${leftWk} 周` : '本学期已结束'}</div>
     </div>
 
-    <div class="section-label">计费设置</div>
+    <div class="section-label">计费</div>
     <div class="rows">
       <div class="row" data-act="open-types">
         <div class="ri" style="background:var(--brand-soft);color:var(--brand)">${ic('book', 17)}</div>
-        <div class="rc"><div class="t">课程类型与单价</div><div class="s">正课、自习等分开计价</div></div>
+        <div class="rc"><div class="t">课程类型与单价</div></div>
         <div class="rv">${typeN} 类</div>
         ${ic('right', 15)}
       </div>
       <div class="row" data-act="open-calc-rules">
         <div class="ri" style="background:var(--violet-soft);color:var(--violet)">${ic('spark', 17)}</div>
-        <div class="rc"><div class="t">计费公式</div><div class="s">${state.settings.useClassFactor ? '已启用班级系数' : '未启用班级系数'}</div></div>
+        <div class="rc"><div class="t">计费公式</div></div>
         <div class="rv">${schemeName(state.settings.scheme)}</div>
-        ${ic('right', 15)}
-      </div>
-      <div class="row" data-act="open-class-factor">
-        <div class="ri" style="background:var(--amber-soft);color:#B26A00">${ic('flame', 17)}</div>
-        <div class="rc"><div class="t">班级系数</div><div class="s">按班级名关键词自动上浮</div></div>
-        <div class="rv">${state.settings.classFactors.length} 条</div>
         ${ic('right', 15)}
       </div>
     </div>
 
-    <div class="section-label">课表与作息</div>
+    <div class="section-label">课表与提醒</div>
     <div class="rows">
       <div class="row" data-act="open-periods">
         <div class="ri" style="background:var(--sky-soft);color:#026AA2">${ic('clock', 17)}</div>
-        <div class="rc"><div class="t">作息时间表</div><div class="s">决定上课时长与提醒时刻</div></div>
+        <div class="rc"><div class="t">作息时间表</div></div>
         <div class="rv">${state.periods.length} 节</div>
         ${ic('right', 15)}
       </div>
       <div class="row" data-act="open-holidays">
         <div class="ri" style="background:var(--rose-soft);color:var(--rose)">${ic('cal', 17)}</div>
-        <div class="rc"><div class="t">法定节假日</div><div class="s">${esc(holidaySummary())}</div></div>
+        <div class="rc"><div class="t">法定节假日</div><div class="s">${offN} 天假 · ${workN} 天补班</div></div>
         <div class="rv">${state.settings.holidaySkip === false ? '不跳过' : ''}</div>
         ${ic('right', 15)}
       </div>
-      <div class="row" data-act="open-makeup-rule">
-        <div class="ri" style="background:var(--rose-soft);color:var(--rose)">${ic('swap', 17)}</div>
-        <div class="rc"><div class="t">调休规则</div><div class="s">${esc(makeupSummary())}</div></div>
-        <div class="rv">${adjustN || ''}</div>
-        ${ic('right', 15)}
-      </div>
-      <div class="row" data-act="open-swap-log">
+      <div class="row" data-act="open-swap-center">
         <div class="ri" style="background:var(--mint-soft);color:var(--mint)">${ic('swap', 17)}</div>
-        <div class="rc"><div class="t">调课记录</div><div class="s">${state.swaps.length ? `共 ${state.swaps.length} 次调整` : '暂无调课记录'}</div></div>
-        <div class="rv">${state.swaps.length || ''}</div>
+        <div class="rc"><div class="t">调课与调休</div><div class="s">${esc(makeupSummary())}</div></div>
+        <div class="rv">${swapN ? `${swapN} 次` : ''}</div>
         ${ic('right', 15)}
-      </div>
-    </div>
-
-    <div class="section-label">提醒</div>
-    <div class="rows">
-      <div class="row">
-        <div class="ri" style="background:var(--rose-soft);color:var(--rose)">${ic('bell', 17)}</div>
-        <div class="rc"><div class="t">课前提醒</div><div class="s">${state.settings.remindEnabled ? `课前 ${state.settings.remindBefore} 分钟 · 通知${notifyText}` : '已关闭'}</div></div>
-        <div class="switch ${state.settings.remindEnabled ? 'on' : ''}" data-act="toggle-remind"></div>
       </div>
       <div class="row" data-act="open-remind">
-        <div class="ri" style="background:#F2F4F7;color:var(--ink-2)">${ic('cog', 17)}</div>
-        <div class="rc"><div class="t">提醒设置</div><div class="s">提前时间、每日小结、通知权限</div></div>
+        <div class="ri" style="background:var(--rose-soft);color:var(--rose)">${ic('bell', 17)}</div>
+        <div class="rc"><div class="t">课前提醒</div><div class="s">${remindSub}</div></div>
+        <div class="switch ${state.settings.remindEnabled ? 'on' : ''}" data-act="toggle-remind"></div>
         ${ic('right', 15)}
       </div>
     </div>
 
-    <div class="section-label">数据与备份</div>
+    <div class="section-label">数据</div>
     <div class="rows">
       <div class="row" data-act="open-schedule-io" data-ie="export">
         <div class="ri" style="background:var(--brand-soft);color:var(--brand)">${ic('swap', 17)}</div>
-        <div class="rc"><div class="t">导入导出课表</div><div class="s">总课表变成一段文本，复制分享或粘贴导入</div></div>
+        <div class="rc"><div class="t">导入导出课表</div><div class="s">复制成文本发给同事</div></div>
         ${ic('right', 15)}
       </div>
-      <div class="row" data-act="export-data">
+      <div class="row" data-act="open-backup">
         <div class="ri" style="background:var(--mint-soft);color:var(--mint)">${ic('download', 17)}</div>
-        <div class="rc"><div class="t">导出备份</div><div class="s">自选保存位置，JSON 文件可换机恢复</div></div>
+        <div class="rc"><div class="t">备份与恢复</div><div class="s">换手机不丢数据</div></div>
         ${ic('right', 15)}
       </div>
-      <div class="row" data-act="import-data">
-        <div class="ri" style="background:#F2F4F7;color:var(--ink-2)">${ic('doc', 17)}</div>
-        <div class="rc"><div class="t">从备份恢复</div><div class="s">选择之前导出的 JSON 文件</div></div>
+      <div class="row" data-act="clear-schedule">
+        <div class="ri" style="background:var(--rose-soft);color:var(--rose)">${ic('trash', 17)}</div>
+        <div class="rc"><div class="t" style="color:var(--rose)">清理课表</div><div class="s">只删课程，设置都保留</div></div>
         ${ic('right', 15)}
       </div>
-    </div>
-    <div class="mine-actions">
-      <button class="btn ghost sm" data-act="open-import">${ic('upload', 14)} 批量导入课表</button>
-      <button class="btn ghost sm" data-act="clear-schedule">${ic('trash', 14)} 清理课表</button>
     </div>
 
     <div class="section-label">帮助与关于</div>
@@ -2706,7 +2702,7 @@ function renderMine() {
       </div>
       <div data-act="open-help" data-h="guide">
         <div class="ml-ic" style="background:var(--sky-soft);color:#026AA2">${ic('doc', 16)}</div>
-        <b>使用说明</b><span>七步上手</span>
+        <b>使用说明</b><span>上手步骤</span>
       </div>
       <div data-act="open-help" data-h="about">
         <div class="ml-ic" style="background:var(--brand-soft);color:var(--brand)">${ic('info', 16)}</div>
@@ -2715,11 +2711,8 @@ function renderMine() {
     </div>
 
     <div class="mine-foot">
-      <button class="danger-link" data-act="reset-demo">重置为示例数据</button>
-      <div class="ver" data-act="open-help" data-h="about">
-        课酬 v${APP_VERSION} · 数据保存在本机浏览器<br>
-        所有计算均在本机完成，不会上传
-      </div>
+      <button class="danger-link" data-act="reset-demo">恢复示例数据</button>
+      <div class="ver" data-act="check-update">v${APP_VERSION} · 检查更新</div>
     </div>
   `;
 }
@@ -2727,7 +2720,7 @@ function renderMine() {
 /* ============================================================
    帮助 · 说明 · 关于
    ============================================================ */
-const APP_VERSION = '1.0.14';
+const APP_VERSION = '1.0.15';
 const APP_BUILD = '2026-11-12';
 
 let helpTab = 'faq';                       // faq | guide | about
@@ -2822,12 +2815,12 @@ const FAQ_GROUPS = [
       },
       {
         q: '数据存在哪里？换手机怎么迁移？',
-        a: `所有数据只保存在本机，<b>不联网、不上传、无广告</b>。<br>换机时先在旧机「我的 → 导出备份」存一份 JSON，新机安装后用「从备份恢复」选这个文件。<b>卸载或清除应用数据会一起删掉</b>，建议每月备份一次。`,
+        a: `所有数据只保存在本机，<b>不上传、不收集、无广告</b>。<br>换机时先在旧机「我的 → 备份与恢复」导出 JSON，新机装好后用同一个入口选这个文件恢复。<b>卸载或清除数据会一起删掉</b>，建议每月备份一次。`,
         go: { act: 'backup', text: '立即导出备份' },
       },
       {
         q: '示例课表怎么清掉？',
-        a: `首页的提示条点「清理」，或我的 →「清理课表」，可以只删示例课、保留自己录的课；也可以全部清空（会二次确认）。`,
+        a: `首页提示条点「清理」，或「我的 → 清理课表」。可以只删示例课、留着自己录的，也可以全部清空（会二次确认）。`,
         go: { act: 'clear', text: '清理课表' },
       },
     ],
@@ -2873,11 +2866,12 @@ const GUIDE_STEPS = [
 ];
 
 const CHANGELOG = [
-  { v: '1.0.14', d: '2026-11-12', items: ['修复「检查更新一直显示已是最新」：多个地址同时查询，取版本号最新的那份', '更新清单不再依赖会被长时间缓存的地址', '「已是最新」页显示服务器版本号，读到的清单比本机旧会直接提示'] },
+  { v: '1.0.15', d: '2026-11-12', items: ['「我的」页重新整理：分组更少，每行只说一件事', '调休规则与调课记录合并到「调课与调休」', '备份与恢复合成一个入口，清理课表单独成行', '更新页面只显示版本号和更新内容，去掉技术细节'] },
+  { v: '1.0.14', d: '2026-11-12', items: ['修复有了新版本却提示「已是最新」的问题', '检查更新更稳，不再受网络缓存影响'] },
   { v: '1.0.13', d: '2026-11-12', items: ['新增法定节假日：内置 2026–2027 年放假与补班安排', '可改日期名称、设半天放学，联网可同步最新年份', '铺课表自动跳过假期，补班日按指定星期的课表上课'] },
-  { v: '1.0.12', d: '2026-11-11', items: ['备用更新地址换成实测可用的镜像', '移除已失效的旧镜像域名'] },
-  { v: '1.0.11', d: '2026-11-11', items: ['修复国内网络下检查更新失败（域名被污染）', '更新清单与安装包都改为多地址依次尝试', '检查失败可直接填自己的更新源'] },
-  { v: '1.0.10', d: '2026-11-11', items: ['更新源改为正式仓库 user269/kechou', '新增开源仓库：源码、构建脚本与发布流程', '签名密码改为本地文件读取，不再写进脚本'] },
+  { v: '1.0.12', d: '2026-11-11', items: ['部分网络下检查更新会失败，这次换了更稳的线路'] },
+  { v: '1.0.11', d: '2026-11-11', items: ['修复部分网络连不上更新服务器', '检查失败时可以自己填一个更新地址'] },
+  { v: '1.0.10', d: '2026-11-11', items: ['更新改从正式发布页获取'] },
   { v: '1.0.9', d: '2026-11-11', items: ['新增自动更新：检查、下载、安装一条龙', '界面可热更新，改文案不必再重装整包', '更新失败不影响本地数据，随时可回退'] },
   { v: '1.0.8', d: '2026-11-11', items: ['「我的」页重排：身份卡带本月课时/课酬/本周剩余', '新增学期进度条，一眼看出第几周、单双周', '计费与课表拆成两组，清理与重置下沉到页脚'] },
   { v: '1.0.7', d: '2026-11-11', items: ['新增帮助中心：快捷帮助、使用说明、关于', '关于页可查看本机数据统计与完整更新记录', '补充空状态与几处文案细节'] },
@@ -3001,32 +2995,13 @@ function aboutHtml() {
 
     <div class="help-group">数据与隐私</div>
     <div class="help-note" style="margin-top:0">
-      所有课程、课表和设置都保存在<b>这台手机本地</b>。App 不联网、不上传、无广告，也不申请通讯录、位置、相册等权限。<br>
-      卸载或清除应用数据会一并删除，请定期用「导出备份」存一份 JSON。
-    </div>
-
-    <div class="help-group">快捷入口</div>
-    <div class="rows">
-      <div class="row" data-act="export-data">
-        <div class="ri" style="background:var(--brand-soft);color:var(--brand)">${ic('download', 17)}</div>
-        <div class="rc"><div class="t">导出备份</div><div class="s">自选保存位置，换机可恢复</div></div>
-        ${ic('right', 15)}
-      </div>
-      <div class="row" data-act="open-schedule-io" data-ie="export">
-        <div class="ri" style="background:var(--mint-soft);color:var(--mint)">${ic('swap', 17)}</div>
-        <div class="rc"><div class="t">导出课表文本</div><div class="s">发给同事，或用另一台手机导入</div></div>
-        ${ic('right', 15)}
-      </div>
-      <div class="row" data-act="check-update">
-        <div class="ri" style="background:#F2F4F7;color:var(--ink-2)">${ic('reset', 17)}</div>
-        <div class="rc"><div class="t">检查更新</div><div class="s">当前 v${esc(localAppInfo().versionName)} · 联网检查新版本</div></div>
-        ${ic('right', 15)}
-      </div>
+      课程、课表和设置都只保存在<b>这台手机</b>，我们拿不到，也不上传、不收集、无广告。<br>
+      卸载或清除数据会一并删除，建议定期在「备份与恢复」里存一份。
     </div>
 
     <div class="help-foot">
       课酬 · 给一线老师的小工具<br>
-      计算都在本机完成，数字对不上时先看「费用构成」
+      数字对不上时，点开那节课看「费用构成」
     </div>`;
 }
 
@@ -3113,15 +3088,15 @@ function mirrorUrls(url, extra) {
 function friendlyUpdateError(msg) {
   const m = String(msg || '');
   if (/0\.0\.0\.0|ConnectException|Failed to connect|ECONNREFUSED/i.test(m)) {
-    return '连不上 GitHub 的更新服务器，这个域名在国内常被网络运营商拦截（会解析成 0.0.0.0）。下面几个备用地址也都没通，可以点「换个更新源」填自己的地址，或连上代理后再试。';
+    return '连不上更新服务器，可能是当前网络限制了它。换成流量或别的 WiFi 再试一次。';
   }
   if (/UnknownHost|域名解析|No address associated/i.test(m)) {
-    return '域名解析失败，当前网络查不到更新服务器。换成流量或换个 WiFi 再试一次。';
+    return '当前网络找不到更新服务器，换个网络再试。';
   }
-  if (/超时|timeout/i.test(m)) return '连接超时，网络太慢或该地址不可达，稍后重试即可。';
-  if (/HTTP 4\d\d/.test(m)) return '更新服务器返回了错误状态（' + m + '），可能是仓库或发布被删掉了。';
-  if (/清单为空|清单格式|JSON/i.test(m)) return '更新清单内容不对，可能被网络中间设备改写了，换个网络再试。';
-  return m || '未知错误';
+  if (/超时|timeout/i.test(m)) return '连接超时了，网络有点慢，稍后再试。';
+  if (/HTTP 4\d\d/.test(m)) return '更新服务器暂时没有响应，可能是这个版本刚被撤回。';
+  if (/清单为空|清单格式|JSON/i.test(m)) return '收到的更新信息不完整，换个网络再试。';
+  return m || '连不上更新服务器，稍后再试。';
 }
 
 /** 当前安装包与资源包的版本信息，浏览器里取不到就按「永不提示整包」处理。 */
@@ -3385,31 +3360,31 @@ function openUpdateSheet() {
   });
 }
 
-/** 换个更新源：给被墙的用户留一条自己填地址的出路。 */
+/** 换个更新源：给网络受限的用户留一条自己填地址的出路。 */
 function openUpdateSource() {
   const cur = String(state.settings.updateSource || '');
   const def = UPDATE_SOURCES
     .map((u, i) => `<div class="src-line"><b>${i + 1}</b><span>${esc(u)}</span></div>`)
     .join('');
   openSheet({
-    title: '更新源',
+    title: '换个更新地址',
     body: `
       <div class="help-note" style="margin-top:4px">
-        <b>为什么会有这个问题</b><br>
-        更新清单放在 GitHub 上，国内部分网络会把 <b>raw.githubusercontent.com</b> 解析成 0.0.0.0，直接连不上。
-        应用已经内置了 5 个地址同时去要清单、取版本号最新的那份；如果都不通，可以在这里填一个自己能访问的地址。
+        更新信息存在 GitHub 上，有些网络连不进去。如果你有能打开的地址，填在下面就能用。
       </div>
       <div class="section-label">自定义地址</div>
       <input class="input" id="upd-src" placeholder="https://你的域名/update.json" value="${esc(cur)}">
       <div class="tiny muted" style="margin-top:8px;line-height:1.7">
-        留空表示只用内置地址。填了之后它会和内置地址一起尝试。
+        留空表示只用内置地址。
       </div>
-      <div class="section-label">内置地址（同时尝试，取最新）</div>
-      ${def}
+      <details class="src-fold">
+        <summary>查看内置地址（${UPDATE_SOURCES.length} 个）</summary>
+        ${def}
+      </details>
       <div class="rows" style="margin-top:14px">
         <div class="row" data-act="upd-clear-src">
           <div class="ri" style="background:#F2F4F7;color:var(--ink-2)">${ic('swap', 17)}</div>
-          <div class="rc"><div class="t">恢复默认</div><div class="s">只使用内置的五个地址</div></div>
+          <div class="rc"><div class="t">恢复默认</div><div class="s">清掉自定义地址</div></div>
           ${ic('right', 15)}
         </div>
       </div>`,
@@ -3466,43 +3441,35 @@ function updateBodyHtml() {
     return `<div class="upd-wait">
       <div class="upd-spin"></div>
       <div class="upd-title">正在检查更新</div>
-      <div class="upd-sub">连不上网络时会自动放弃，不影响正常使用</div>
+      <div class="upd-sub">马上就好</div>
     </div>`;
   }
 
   if (UPD.phase === 'error') {
-    const cache = state.settings.updateCache;
-    const when = cache && cache.at ? fmtShortTime(cache.at) : '';
     return `<div class="upd-wait">
       <div class="upd-mark err">!</div>
       <div class="upd-title">检查失败</div>
       <div class="upd-sub">${esc(UPD.err || '网络不可用')}</div>
     </div>
     <div class="help-note">
-      课表与课酬都存在本机，<b>检查失败不影响任何数据</b>，可以照常使用。
-      ${when ? `<br>上次成功检查：${esc(when)}` : ''}
-    </div>`;
+      课表和课酬都存在本机，<b>检查失败不会影响使用</b>。
+    </div>
+    <div class="upd-alt" data-act="upd-source">换了网络还是不行？点这里换一个更新地址</div>`;
   }
 
   if (UPD.phase === 'uptodate') {
     const rc = Number(UPD.remoteCode) || 0;
     const lc = Number(local.versionCode) || 0;
-    // rc < lc 说明拿到的清单比本机还旧 —— 典型是 CDN 缓存没刷新，不是真的「最新」
+    // rc < lc：拿到的清单比本机还旧，典型是 CDN 缓存没刷新，不是真的「最新」
     const stale = rc > 0 && lc > 0 && rc < lc;
     return `<div class="upd-wait">
       <div class="upd-mark ok">${ic('check', 26)}</div>
       <div class="upd-title">已是最新版本</div>
-      <div class="upd-sub">当前 v${esc(local.versionName)}${local.webBuild ? ` · 资源 ${local.webBuild}` : ''}</div>
+      <div class="upd-sub">当前 v${esc(local.versionName)}</div>
     </div>
-    ${rc ? `<div class="help-note">
-      服务器上最新：<b>v${esc(UPD.remoteName || rc)}</b>${stale ? ' · 比本机还旧' : ''}<br>
-      ${stale
-        ? '这个更新源明显被 CDN 缓存住了（缓存里还是老清单）。点下面的「换个更新源」换一个再试，通常就能拿到真正的版本号。'
-        : '两边一致，不需要更新。'}
-    </div>` : ''}`;
+    ${stale ? `<div class="upd-alt" data-act="upd-source">没查到新版本？可能是网络缓存，点这里换个更新地址</div>` : ''}`;
   }
 
-  const kindLabel = UPD.kind === 'apk' ? '完整安装包' : '界面资源包';
   const notes = UPD.notes.length ? UPD.notes : ['优化使用体验，修复已知问题'];
 
   let extra = '';
@@ -3511,19 +3478,18 @@ function updateBodyHtml() {
       <div class="upd-pct">${UPD.pct}%${UPD.size ? ` · 共 ${Math.round(UPD.size / 1024)} KB` : ''}</div>`;
   } else if (UPD.phase === 'ready') {
     extra = UPD.kind === 'web'
-      ? `<div class="help-note" style="margin-top:14px">新资源已经就位，重启应用即可用上。若发现异常，可在设置里回退到内置版本。</div>`
-      : `<div class="help-note" style="margin-top:14px">下载完成。点击下面的「安装」后，系统会弹出确认框，需要你手动点一次「安装」并等待完成。</div>`;
+      ? `<div class="help-note" style="margin-top:14px">已经准备好，重启一下就生效。</div>`
+      : `<div class="help-note" style="margin-top:14px">下载好了。点「安装」后系统会弹窗确认，覆盖安装不会清除课表数据。</div>`;
   }
 
   return `
     <div class="upd-hero">
-      <span class="upd-badge ${UPD.kind === 'apk' ? 'apk' : ''}">${kindLabel}</span>
-      <div class="upd-ver">${UPD.kind === 'apk' ? 'v' : ''}${esc(UPD.latest)}</div>
-      <div class="upd-from">当前 v${esc(local.versionName)}${local.webBuild ? ` · 资源 ${local.webBuild}` : ''}${sizeText(UPD.size)}</div>
+      <span class="upd-badge ${UPD.kind === 'apk' ? 'apk' : ''}">${UPD.kind === 'apk' ? '新版本' : '界面更新'}</span>
+      ${UPD.kind === 'apk' ? `<div class="upd-ver">v${esc(UPD.latest)}</div>` : ''}
+      <div class="upd-from">当前 v${esc(local.versionName)}</div>
     </div>
     <ul class="upd-notes">${notes.map(x => `<li>${esc(x)}</li>`).join('')}</ul>
-    ${extra}
-    ${UPD.kind === 'apk' ? '<div class="tiny muted" style="margin-top:12px;line-height:1.7">安卓系统不允许应用自行安装，最后一步必须由你点击确认。覆盖安装不会清除课表数据。</div>' : ''}`;
+    ${extra}`;
 }
 
 function updateFooterHtml() {
@@ -3532,10 +3498,10 @@ function updateFooterHtml() {
       return `<button class="btn ghost" data-close>取消</button>`;
     case 'error':
       return `<button class="btn" data-act="upd-retry">重试</button>`
-        + `<button class="btn ghost" data-act="upd-source">换个更新源</button>`;
+        + `<button class="btn ghost" data-close>关闭</button>`;
     case 'uptodate':
       return `<button class="btn" data-act="upd-retry">重新检查</button>`
-        + `<button class="btn ghost" data-act="upd-source">换个更新源</button>`;
+        + `<button class="btn ghost" data-close>关闭</button>`;
     case 'download':
       return `<button class="btn" disabled>下载中 ${UPD.pct}%</button>`;
     case 'ready':
@@ -4385,7 +4351,7 @@ function openCalcRules() {
               <div class="input-suffix" style="flex:1"><input class="input num" data-tier="${i}" data-k="price" type="number" value="${t.price}"><span class="sfx">元/节</span></div>
             </div>`).join('')}
         </div>
-        <div class="info-banner" style="margin-bottom:14px">${ic('info', 16)}<div>例：前 20 节按第一档，第 21–40 节按第二档，超出按最后一档。仅对标记了「参与阶梯」的课程类型生效。</div></div>
+        <div class="info-banner" style="margin-bottom:14px">${ic('info', 16)}<div>前 20 节按第一档，之后按第二档，超出按最后一档。</div></div>
       ` : ''}
 
       ${s.scheme === 'overtime' ? `
@@ -4406,14 +4372,18 @@ function openCalcRules() {
           }).join('')}
         </select>
         <div class="tiny muted" style="margin-top:7px;line-height:1.65">
-          例：正课 45 分钟 65 元，实际拖堂 20 分钟，这 20 分钟不按正课价算，
-          而是按所选类型折算后单独计入该类型。留空或选「不延长」即视为没有延长课。
+          例：正课 45 分钟 65 元，拖堂 20 分钟，这 20 分钟按这里选的类型单独计价。
         </div>
       </div>
 
-      <div class="row" style="background:#F7F9FC;border-radius:14px;padding:13px">
-        <div class="rc"><div class="t" style="font-size:14px">班级系数加成</div><div class="s">班级名含关键词时自动上浮</div></div>
+      <div class="field-label">班级系数</div>
+      <div class="row" data-act="open-class-factor" style="background:#F7F9FC;border-radius:14px;padding:13px">
+        <div class="rc">
+          <div class="t" style="font-size:14px">${state.settings.classFactors.length} 条关键词</div>
+          <div class="s">班级名匹配时自动乘系数，点这里增删</div>
+        </div>
         <div class="switch ${s.useClassFactor ? 'on' : ''}" data-act="toggle-class-factor"></div>
+        ${ic('right', 15)}
       </div>
       <div style="height:6px"></div>
     `,
@@ -4427,7 +4397,7 @@ function openTypesSheet() {
     title: '课程类型与单价',
     body: `
       <div class="info-banner" style="margin-bottom:14px">${ic('info', 16)}
-        <div>每种类型独立设置单价。正课与自习分开计算，自习单价通常更低。</div></div>
+        <div>每种类型单独设单价，正课和自习分开算。</div></div>
       ${list.map(t => `
         <div class="row" style="background:#F7F9FC;border-radius:14px;margin-bottom:9px" data-act="edit-type" data-id="${t.id}">
           <div class="ri" style="background:${t.color}18;color:${t.color}">${ic(typeIcon(t), 17)}</div>
@@ -4504,7 +4474,7 @@ function openClassFactorSheet() {
     title: '班级系数',
     body: `
       <div class="info-banner" style="margin-bottom:14px">${ic('info', 16)}
-        <div>当班级名称包含关键词时（如「高三」），该节课的课时费自动乘以对应系数。毕业班、实验班常用。</div></div>
+        <div>班级名里带关键词就自动乘系数，比如「高三」×1.2。</div></div>
       ${cf.length ? cf.map((c, i) => `
         <div class="hstack" style="gap:8px;margin-bottom:9px">
           <div style="flex:1.4"><input class="input" data-cf="${i}" data-k="key" value="${esc(c.key)}" placeholder="关键词"></div>
@@ -4562,7 +4532,7 @@ function openPeriodsSheet() {
     title: '作息时间表',
     body: `
       <div class="info-banner" style="margin-bottom:14px">${ic('clock', 16)}
-        <div>这里的时间同时决定课表展示、课前提醒，以及<b>自习课时长</b>；改完后跟随作息的课程会自动同步。</div></div>
+        <div>这里的时间决定课表显示、课前提醒和<b>自习时长</b>，改完会自动同步。</div></div>
       ${state.periods.map((p, i) => `
         <div class="hstack" style="gap:8px;margin-bottom:8px">
           <div style="flex:0 0 62px;font-size:13px;font-weight:650;color:var(--ink-2)">${esc(p.name)}</div>
@@ -4579,13 +4549,16 @@ function openPeriodsSheet() {
 function openRemindSheet() {
   const s = state.settings;
   const perm = notifyPermissionState();
-  const permText = IS_NATIVE
-    ? { granted: '已授权，课前会弹出系统通知', denied: '已被拒绝，需在系统设置中开启', default: '尚未授权，点右侧按钮开启', unsupported: '当前设备不支持' }[perm]
-    : { granted: '已授权，可收到系统通知', denied: '已被拒绝，需在浏览器设置中开启', default: '尚未授权', unsupported: '当前浏览器不支持系统通知' }[perm];
+  const permText = {
+    granted: '通知已开启',
+    denied: IS_NATIVE ? '通知被关掉了' : '通知被浏览器拦了',
+    default: '通知还没开启',
+    unsupported: '这台设备不支持通知',
+  }[perm];
   const exactOk = IS_NATIVE ? NATIVE.canScheduleExact() : true;
   const subText = IS_NATIVE
-    ? '提醒由系统闹钟触发，App 关闭后依然有效'
-    : '关闭浏览器后仍需提醒，请把本应用添加到主屏幕';
+    ? '由系统闹钟触发，关掉应用也有效'
+    : '建议先「添加到主屏幕」再用';
 
   openSheet({
     title: '提醒设置',
@@ -4620,29 +4593,32 @@ function openRemindSheet() {
         <div class="field-label">准点提醒</div>
         <div class="row" style="background:#F7F9FC;border-radius:14px;padding:13px">
           <div class="rc"><div class="t" style="font-size:13.5px;font-weight:600">${exactOk ? '已开启，提醒准点' : '未开启，可能延迟几分钟'}</div>
-          <div class="s">系统需要「闹钟与提醒」权限才能精确到分钟</div></div>
+          <div class="s">需要「闹钟与提醒」权限才能准点</div></div>
           ${exactOk ? '' : `<button class="btn sm" data-act="req-exact">开启</button>`}
         </div>
       </div>` : ''}
       <div class="info-banner" style="margin-bottom:6px">${ic('info', 16)}
         <div>${IS_NATIVE
-          ? '已排入未来 15 天的提醒。修改课表或作息时间后会自动重新排期。'
-          : '提醒在应用打开或后台运行时生效。iPhone 需将本站「添加到主屏幕」后使用。'}</div></div>
+          ? '已排好未来 15 天，改了课表会自动重排。'
+          : '提醒需要应用在后台运行才响。'}</div></div>
     `,
     footer: `<button class="btn ghost" data-close>关闭</button><button class="btn" data-act="test-notify">测试提醒</button>`,
   });
 }
 
-function openSwapLog() {
+function swapLogHtml() {
   const list = state.swaps.slice().sort((a, b) => b.at - a.at);
   const fmtSlot = s => {
     const [d, p] = String(s).split('#');
     const per = getPeriod(Number(p));
     return `${fmtMD(d)} ${per.name}`;
   };
-  openSheet({
-    title: '调课记录',
-    body: list.length ? list.map(s => `
+  if (!list.length) {
+    return `<div class="empty" style="padding:32px 0">${ic('swap', 40)}
+      <div class="t">还没有调课</div>
+      <div class="s">在课表里点开一节课，就能换时间或与人互换</div></div>`;
+  }
+  return list.map(s => `
       <div class="card flat" style="padding:12px 14px;margin-bottom:9px">
         <div class="hstack" style="justify-content:space-between">
           <div style="font-weight:700;font-size:14px">${esc(s.aName || '课程')}</div>
@@ -4655,8 +4631,31 @@ function openSwapLog() {
         </div>
         ${s.type === 'exchange' && s.bName ? `<div class="tiny muted" style="margin-top:5px">与 ${esc(s.bName)} 互换</div>` : ''}
         <div class="tiny muted" style="margin-top:6px">${new Date(s.at).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })} 操作</div>
-      </div>`).join('') : `
-      <div class="empty">${ic('swap', 40)}<div class="t">还没有调课记录</div><div class="s">在课表中点击课程即可调课</div></div>`,
+      </div>`).join('');
+}
+
+function openSwapLog() { openSwapCenter('log'); }
+
+/** 备份与恢复：两件事放在一张面板里，避免「我的」页堆三行。 */
+function openBackupSheet() {
+  openSheet({
+    title: '备份与恢复',
+    body: `
+      <div class="rows">
+        <div class="row" data-act="export-data">
+          <div class="ri" style="background:var(--mint-soft);color:var(--mint)">${ic('download', 17)}</div>
+          <div class="rc"><div class="t">导出备份文件</div><div class="s">存成 JSON，换手机或重装后恢复</div></div>
+          ${ic('right', 15)}
+        </div>
+        <div class="row" data-act="import-data">
+          <div class="ri" style="background:#F2F4F7;color:var(--ink-2)">${ic('doc', 17)}</div>
+          <div class="rc"><div class="t">从备份恢复</div><div class="s">选择之前导出的 JSON 文件</div></div>
+          ${ic('right', 15)}
+        </div>
+      </div>
+      <div class="help-note" style="margin-top:12px">
+        恢复会<b>覆盖当前所有数据</b>，建议先导出一份再操作。备份文件只存在你选择的位置，不会上传。
+      </div>`,
     footer: `<button class="btn ghost" data-close>关闭</button>`,
   });
 }
@@ -5182,8 +5181,8 @@ function renderScheduleIO() {
     </div>
     <div class="tiny muted" style="line-height:1.75;margin-bottom:8px">
       ${isExport
-        ? '这是当前总课表。可复制发给同事 / 另一台手机，或存成 txt 留档。'
-        : '把课表文本粘贴进来，一行一节：<br><b>单周 周二 第4节 辅导 高二(3)班 英语</b><br>有拖堂就在行尾加 <b>+20分</b>。'}
+        ? '这是当前总课表，可以复制发给同事，或存成 txt 留档。'
+        : '一行一节课，例如：<b>周二 第4节 高二(3)班 正课</b>，拖堂写在行尾 <b>+20分</b>。'}
     </div>
     <textarea class="input" id="ie-text" spellcheck="false" autocapitalize="off" autocorrect="off"
       style="min-height:${isExport ? 240 : 168}px;font-size:11.5px;line-height:1.8;white-space:pre;font-family:ui-monospace,Menlo,Consolas,monospace">${esc(ieText)}</textarea>
@@ -5202,9 +5201,15 @@ function renderScheduleIO() {
           <button class="${ieOpts.mode === 'merge' ? 'on' : ''}" data-act="ie-mode" data-mode="merge">合并</button>
         </div>
       </div>
-      <div class="row" style="padding-left:0;padding-right:0" data-act="ie-toggle-sync">
-        <div class="rc"><div class="t">同时铺到本学期</div><div class="s">按总课表补全每个周次的课，已调休的周会跳过</div></div>
+      <div class="row" style="padding-left:0;padding-right:0;margin-top:4px" data-act="ie-toggle-sync">
+        <div class="ri" style="background:var(--brand-soft);color:var(--brand)">${ic('cal', 17)}</div>
+        <div class="rc"><div class="t">同时铺到本学期</div><div class="s">补全每个周次的课，已调休的周跳过</div></div>
         <div class="switch ${ieOpts.sync ? 'on' : ''}"></div>
+      </div>
+      <div class="row" style="padding-left:0;padding-right:0;border-top:1px solid var(--line-2)" data-act="open-import">
+        <div class="ri" style="background:var(--amber-soft);color:#B26A00">${ic('upload', 17)}</div>
+        <div class="rc"><div class="t">按行批量导入</div><div class="s">从 Excel 直接复制，支持日期与单双周</div></div>
+        ${ic('right', 15)}
       </div>
     `}
   `;
@@ -5367,6 +5372,12 @@ document.addEventListener('click', e => {
     /* 调休 */
     case 'open-makeup': openMakeupSheet(); break;
     case 'open-makeup-rule': openMakeupRuleSheet(); break;
+    case 'open-swap-center': openSwapCenter('rule'); break;
+    case 'swap-tab':
+      swapTab = el.dataset.t === 'log' ? 'log' : 'rule';
+      if (swapTab === 'rule') draftMakeup = { ...makeupRule() };
+      renderSwapCenter();
+      break;
 
     /* 法定节假日 */
     case 'open-holidays': openHolidaysSheet(); break;
@@ -5651,7 +5662,8 @@ document.addEventListener('click', e => {
         }
       });
       state.settings.classFactors = state.settings.classFactors.filter(c => c.key);
-      save(); closeSheet(); render(); toast('班级系数已保存', 'check');
+      save(); render(); toast('班级系数已保存', 'check');
+      openCalcRules();       // 回到上一级，别让用户以为退出了设置
       break;
 
     case 'open-periods': openPeriodsSheet(); break;
@@ -5667,6 +5679,7 @@ document.addEventListener('click', e => {
       break;
     }
     case 'open-swap-log': openSwapLog(); break;
+    case 'open-backup': openBackupSheet(); break;
     case 'period-save': {
       // 记录旧时长，用于判断哪些课原本就「跟着作息走」
       const before = {};

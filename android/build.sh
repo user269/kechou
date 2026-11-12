@@ -8,7 +8,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 # ---------- 路径 ----------
-SDK_POSIX="${ANDROID_SDK_ROOT:-/c/Users/555/AppData/Local/Temp/android-sdk}"
+SDK_POSIX="${ANDROID_SDK_ROOT:-/c/Users/555/android-sdk}"
 SDK_WIN="$(cygpath -m "$SDK_POSIX" 2>/dev/null || echo "$SDK_POSIX")"
 JDK_POSIX="${JAVA_HOME:-/c/Program Files/Java/jdk-17}"
 JDK_WIN="$(cygpath -m "$JDK_POSIX" 2>/dev/null || echo "$JDK_POSIX")"
@@ -22,8 +22,8 @@ OUT="build"
 KS="keystore.jks"
 # 签名密码不写进仓库：优先读环境变量，其次读本地 android/.keystore-pass
 KS_PASS="${KS_PASS:-$(cat .keystore-pass 2>/dev/null || true)}"
-VERSION_NAME="1.0.14"
-VERSION_CODE="15"
+VERSION_NAME="1.0.15"
+VERSION_CODE="16"
 APK_NAME="课酬-${VERSION_NAME}.apk"
 
 # ---------- 前置检查 ----------

@@ -1,18 +1,19 @@
 {
-  "versionCode": 15,
-  "versionName": "1.0.14",
+  "versionCode": 16,
+  "versionName": "1.0.15",
   "notes": [
-    "修复「检查更新一直显示已是最新」：多个地址同时查询，取版本号最新的那份",
-    "更新清单不再依赖会被 CDN 缓存住的地址",
-    "「已是最新」页显示服务器上的版本号，读到旧清单会直接提示并给出换源入口"
+    "「我的」页重新整理：分组更少，每行只说一件事",
+    "调休规则与调课记录合并为「调课与调休」",
+    "备份与恢复合成一个入口，清理课表单独成行",
+    "更新页面只显示版本号和更新内容，去掉技术细节"
   ],
   "apk": {
-    "url": "https://github.com/user269/kechou/releases/download/v1.0.14/kebao-1.0.14.apk",
-    "size": 365813,
+    "url": "https://github.com/user269/kechou/releases/download/v1.0.15/kebao-1.0.15.apk",
+    "size": 365814,
     "mirrors": [
-      "https://ghfast.top/https://github.com/user269/kechou/releases/download/v1.0.14/kebao-1.0.14.apk",
-      "https://gh-proxy.com/https://github.com/user269/kechou/releases/download/v1.0.14/kebao-1.0.14.apk",
-      "https://ghproxy.net/https://github.com/user269/kechou/releases/download/v1.0.14/kebao-1.0.14.apk"
+      "https://ghfast.top/https://github.com/user269/kechou/releases/download/v1.0.15/kebao-1.0.15.apk",
+      "https://gh-proxy.com/https://github.com/user269/kechou/releases/download/v1.0.15/kebao-1.0.15.apk",
+      "https://ghproxy.net/https://github.com/user269/kechou/releases/download/v1.0.15/kebao-1.0.15.apk"
     ]
   },
   "web": {
@@ -21,5 +22,5 @@
     "size": 0,
     "notes": []
   },
-  "updated": "2026-11-12T01:36:56Z"
+  "updated": "2026-11-12T02:37:59Z"
 }

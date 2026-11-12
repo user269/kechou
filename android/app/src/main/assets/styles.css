@@ -1131,6 +1131,7 @@ textarea.input { resize: none; line-height: 1.6; font-weight: 500; font-size: 13
   align-items: center;
   gap: 12px;
   padding: 14px 15px;
+  min-height: 58px;
   position: relative;
   transition: background .15s;
 }
@@ -1761,3 +1762,30 @@ textarea.input { resize: none; line-height: 1.6; font-weight: 500; font-size: 13
   border-color: #F8DCD8;
 }
 .wg-free.wg-off span { font-size: 9px; font-weight: 650; color: #C98C84; }
+
+/* 更新面板里的次要出口：只给「查不到新版」的人用，做得尽量轻 */
+.upd-alt {
+  margin-top: 14px;
+  text-align: center;
+  font-size: 11.5px;
+  color: var(--ink-4);
+  line-height: 1.7;
+  padding: 6px 4px;
+  text-decoration: underline;
+  text-decoration-color: #D6DCE8;
+  text-underline-offset: 3px;
+}
+.upd-alt:active { color: var(--brand); }
+
+/* 内置地址默认折叠，避免一屏 URL 吓到普通用户 */
+.src-fold { margin-top: 14px; }
+.src-fold > summary {
+  list-style: none;
+  font-size: 12px; font-weight: 650; color: var(--ink-3);
+  padding: 8px 2px;
+}
+.src-fold > summary::-webkit-details-marker { display: none; }
+.src-fold > summary::after { content: " ▾"; font-size: 10px; color: var(--ink-4); }
+.src-fold[open] > summary::after { content: " ▴"; }
+.src-fold[open] { border-top: 1px solid var(--line-2); margin-top: 12px; padding-top: 2px; }
+.mt-chev { color: var(--ink-4); display: inline-flex; margin-left: -4px; }
