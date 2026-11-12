@@ -117,12 +117,16 @@ elif mode == 'apk':
     data['versionName'] = vname
     # 镜像顺序即客户端的尝试顺序：jsDelivr 走仓库文件（CDN），
     # 后面两个是 GitHub 反代，最后才是 release 原始直链（国内常被卡）
+    # 镜像顺序即客户端的尝试顺序。jsDelivr 不能用：它对 apk 这类文件会
+    # 301 重定向回 raw.githubusercontent.com，而那个域名在国内本来就打不开，
+    # 等于白等一次超时。直接上两个 GitHub 反代，最后才是 release 原始直链。
     data['apk'] = {
         'url': '%s/%s/%s' % (base, tag, name),
         'size': size,
         'mirrors': [
-            'https://cdn.jsdelivr.net/gh/%s/%s@%s/apk/%s' % (owner, repo, tag, name),
             'https://ghfast.top/%s/%s/%s' % (base, tag, name),
+            'https://gh-proxy.com/%s/%s/%s' % (base, tag, name),
+            'https://ghproxy.net/%s/%s/%s' % (base, tag, name),
         ],
     }
     # 顺手把安装包放进仓库，jsDelivr 才有文件可发

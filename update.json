@@ -10,8 +10,9 @@
     "url": "https://github.com/user269/kechou/releases/download/v1.0.14/kebao-1.0.14.apk",
     "size": 365813,
     "mirrors": [
-      "https://cdn.jsdelivr.net/gh/user269/kechou@v1.0.14/apk/kebao-1.0.14.apk",
-      "https://ghfast.top/https://github.com/user269/kechou/releases/download/v1.0.14/kebao-1.0.14.apk"
+      "https://ghfast.top/https://github.com/user269/kechou/releases/download/v1.0.14/kebao-1.0.14.apk",
+      "https://gh-proxy.com/https://github.com/user269/kechou/releases/download/v1.0.14/kebao-1.0.14.apk",
+      "https://ghproxy.net/https://github.com/user269/kechou/releases/download/v1.0.14/kebao-1.0.14.apk"
     ]
   },
   "web": {
