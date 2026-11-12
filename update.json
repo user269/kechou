@@ -1,18 +1,18 @@
 {
-  "versionCode": 17,
-  "versionName": "1.0.16",
+  "versionCode": 18,
+  "versionName": "1.0.17",
   "notes": [
-    "跟上最新的安卓系统（Android 16）：顶栏不会再被状态栏压住",
-    "返回键换成系统新机制，全面屏手势返回更跟手",
-    "手机最低仍是 Android 6.0，老机器不受影响"
+    "修复在 Android 17 上打开就退出的问题",
+    "万一还是闪退：下次打开会弹窗显示原因，点「复制」发给我即可",
+    "其它系统保持原样，界面没有改动"
   ],
   "apk": {
-    "url": "https://github.com/user269/kechou/releases/download/v1.0.16/kebao-1.0.16.apk",
-    "size": 365813,
+    "url": "https://github.com/user269/kechou/releases/download/v1.0.17/kebao-1.0.17.apk",
+    "size": 369911,
     "mirrors": [
-      "https://ghfast.top/https://github.com/user269/kechou/releases/download/v1.0.16/kebao-1.0.16.apk",
-      "https://gh-proxy.com/https://github.com/user269/kechou/releases/download/v1.0.16/kebao-1.0.16.apk",
-      "https://ghproxy.net/https://github.com/user269/kechou/releases/download/v1.0.16/kebao-1.0.16.apk"
+      "https://ghfast.top/https://github.com/user269/kechou/releases/download/v1.0.17/kebao-1.0.17.apk",
+      "https://gh-proxy.com/https://github.com/user269/kechou/releases/download/v1.0.17/kebao-1.0.17.apk",
+      "https://ghproxy.net/https://github.com/user269/kechou/releases/download/v1.0.17/kebao-1.0.17.apk"
     ]
   },
   "web": {
@@ -21,5 +21,5 @@
     "size": 0,
     "notes": []
   },
-  "updated": "2026-11-12T02:58:06Z"
+  "updated": "2026-11-12T03:11:10Z"
 }

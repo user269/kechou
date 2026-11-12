@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.kebao.lessonpay"
-    android:versionCode="17"
-    android:versionName="1.0.16">
+    android:versionCode="18"
+    android:versionName="1.0.17">
 
     <uses-sdk android:minSdkVersion="23" android:targetSdkVersion="36" />
 
@@ -16,6 +16,7 @@
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
 
     <application
+        android:name=".App"
         android:allowBackup="true"
         android:hardwareAccelerated="true"
         android:icon="@mipmap/ic_launcher"

@@ -45,6 +45,8 @@ public class MainActivity extends Activity {
     public static final String HOST = "kebao.local";
     private static final int REQ_FILE = 0x1001;
     private static final int REQ_NOTIFY = 0x1002;
+    /** 页面底色，与 styles.css 里的 --bg 保持一致。 */
+    private static final int APP_BG = 0xFFF4F6FB;
 
     private WebView web;
     private WebBridge bridge;
@@ -55,29 +57,61 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        CrashLog.install(this);
+        CrashLog.resetSteps(this);
+        CrashLog.step(this, "onCreate(" + Build.VERSION.SDK_INT + ")");
+
         setupWindow();
         registerBackCallback();
+        CrashLog.step(this, "窗口与返回键就绪");
 
         // 上次换资源中途被杀掉的话，先把备份还原，避免加载到半截目录
         Updater.recover(this);
 
         FrameLayout root = new FrameLayout(this);
-        root.setBackgroundColor(Color.parseColor("#F4F6FB"));
+        root.setBackgroundColor(APP_BG);
 
-        web = new WebView(this);
-        web.setLayoutParams(new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        web.setBackgroundColor(Color.parseColor("#F4F6FB"));
-        configureWebView(web);
-        root.addView(web);
+        try {
+            web = new WebView(this);
+            web.setLayoutParams(new FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+            web.setBackgroundColor(APP_BG);
+            configureWebView(web);
+            root.addView(web);
+        } catch (Throwable e) {
+            // 系统 WebView 组件异常时，把原因直接画在屏幕上，别静默退出
+            web = null;
+            CrashLog.step(this, "WebView 创建失败：" + e);
+            root.addView(errorView("网页组件没能启动", e));
+        }
         setContentView(root);
+        CrashLog.step(this, web == null ? "WebView 不可用" : "WebView 已创建");
 
         applyInsets(root);
 
-        loadIndex();
+        if (web != null) {
+            loadIndex();
+            CrashLog.step(this, "页面已交给 WebView");
+        }
 
         Notifier.ensureChannel(this);
         MaybeAskNotifyPermission();
+
+        CrashLog.showIfAny(this);
+    }
+
+    /** 兜底页面：把异常堆栈画出来，用户截图就能反馈。 */
+    private View errorView(String title, Throwable e) {
+        java.io.StringWriter sw = new java.io.StringWriter();
+        sw.write(title + "\n\n");
+        e.printStackTrace(new java.io.PrintWriter(sw));
+        android.widget.TextView tv = new android.widget.TextView(this);
+        tv.setText(sw.toString());
+        tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 12);
+        tv.setTextIsSelectable(true);
+        int pad = (int) (16 * getResources().getDisplayMetrics().density);
+        tv.setPadding(pad, pad, pad, pad);
+        return tv;
     }
 
     /** 热更新目录，存在时优先于 assets 内置版本。 */
@@ -136,68 +170,90 @@ public class MainActivity extends Activity {
     }
 
     private void setupWindow() {
-        getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+        // 启动阶段每一步都单独兜底：新系统把哪个接口改坏了，都不该让应用直接闪退
+        try {
+            getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+        } catch (Throwable ignored) { }
 
+        if (Build.VERSION.SDK_INT >= 35) {
+            // Android 15 起系统强制边到边，状态栏/导航栏的着色接口已停用：
+            // 干脆不碰它们，只把图标设成深色，让位交给 applyInsets()。
+            setLightSystemBars();
+            return;
+        }
         if (Build.VERSION.SDK_INT >= 30) {
-            // Android 11 起统一按「边到边」处理，系统栏透明：
-            // targetSdk 35 以上系统本来就会强制边到边（statusBarColor 等接口失效），
-            // 与其等它被动生效，不如自己显式铺满再按 insets 让位，视觉在 11~16 上一致。
-            getWindow().setDecorFitsSystemWindows(false);
-            getWindow().setStatusBarColor(Color.TRANSPARENT);
-            getWindow().setNavigationBarColor(Color.TRANSPARENT);
-            getWindow().setStatusBarContrastEnforced(false);
-            getWindow().setNavigationBarContrastEnforced(false);
-
-            // 底色是浅色，状态栏与导航栏图标用深色
-            WindowInsetsController c = getWindow().getInsetsController();
-            if (c != null) {
-                int light = WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
-                        | WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS;
-                c.setSystemBarsAppearance(light, light);
-            }
-        } else {
-            getWindow().setStatusBarColor(Color.parseColor("#F4F6FB"));
-            getWindow().setNavigationBarColor(Color.parseColor("#FFFFFF"));
+            try {
+                getWindow().setStatusBarColor(APP_BG);
+                getWindow().setNavigationBarColor(Color.WHITE);
+            } catch (Throwable ignored) { }
+            setLightSystemBars();
+            return;
+        }
+        try {
+            getWindow().setStatusBarColor(APP_BG);
+            getWindow().setNavigationBarColor(Color.WHITE);
+        } catch (Throwable ignored) { }
+        try {
             int flags = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
             if (Build.VERSION.SDK_INT >= 26) flags |= View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
             getWindow().getDecorView().setSystemUiVisibility(flags);
-        }
+        } catch (Throwable ignored) { }
+    }
+
+    /** 浅色底配深色的系统栏图标。 */
+    private void setLightSystemBars() {
+        if (Build.VERSION.SDK_INT < 30) return;
+        try {
+            WindowInsetsController c = getWindow().getInsetsController();
+            if (c == null) return;
+            int light = WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
+                    | WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS;
+            c.setSystemBarsAppearance(light, light);
+        } catch (Throwable ignored) { }
     }
 
     /**
-     * 边到边之后系统不再替我们让出系统栏，这里自己补：
-     * 上边留出状态栏高度（露出 #F4F6FB，与页面顶栏同色），下边留出导航栏/键盘的高度，
+     * Android 15 起窗口铺满整屏，系统不再替我们让出系统栏，这里自己补：
+     * 上边留出状态栏高度（露出 #F4F6FB，与页面顶栏同色），下边留出导航栏或键盘的高度，
      * 导航栏那块单独压一条白底，和页面底部标签栏接得上。
-     * Android 10 及以下窗口本来就没铺满，不需要处理。
+     * 更低的版本窗口本来就没铺满，保持原来的着色状态栏即可。
      */
     private void applyInsets(final FrameLayout root) {
-        if (Build.VERSION.SDK_INT < 30) return;
+        if (Build.VERSION.SDK_INT < 35) return;
+        try {
+            final View navBand = new View(this);
+            navBand.setBackgroundColor(Color.WHITE);
+            root.addView(navBand, new FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, 0, Gravity.BOTTOM));
 
-        final View navBand = new View(this);
-        navBand.setBackgroundColor(Color.WHITE);
-        root.addView(navBand, new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 0, Gravity.BOTTOM));
+            root.setOnApplyWindowInsetsListener((v, insets) -> {
+                try {
+                    WebView w = web;
+                    if (w == null) return insets;
+                    Insets bars = insets.getInsets(WindowInsets.Type.systemBars());
+                    Insets ime = insets.getInsets(WindowInsets.Type.ime());
+                    int bottom = Math.max(bars.bottom, ime.bottom);
 
-        root.setOnApplyWindowInsetsListener((v, insets) -> {
-            Insets bars = insets.getInsets(WindowInsets.Type.systemBars());
-            Insets ime = insets.getInsets(WindowInsets.Type.ime());
-            int bottom = Math.max(bars.bottom, ime.bottom);
+                    FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) w.getLayoutParams();
+                    if (lp.topMargin != bars.top || lp.bottomMargin != bottom) {
+                        lp.topMargin = bars.top;
+                        lp.bottomMargin = bottom;
+                        w.setLayoutParams(lp);
+                    }
 
-            FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) web.getLayoutParams();
-            if (lp.topMargin != bars.top || lp.bottomMargin != bottom) {
-                lp.topMargin = bars.top;
-                lp.bottomMargin = bottom;
-                web.setLayoutParams(lp);
-            }
-
-            FrameLayout.LayoutParams bp = (FrameLayout.LayoutParams) navBand.getLayoutParams();
-            if (bp.height != bars.bottom) {
-                bp.height = bars.bottom;
-                navBand.setLayoutParams(bp);
-            }
-            return insets;
-        });
-        root.requestApplyInsets();
+                    FrameLayout.LayoutParams bp =
+                            (FrameLayout.LayoutParams) navBand.getLayoutParams();
+                    if (bp.height != bars.bottom) {
+                        bp.height = bars.bottom;
+                        navBand.setLayoutParams(bp);
+                    }
+                } catch (Throwable ignored) {
+                    // 让位失败最多是画面贴边，不该把应用带崩
+                }
+                return insets;
+            });
+            root.requestApplyInsets();
+        } catch (Throwable ignored) { }
     }
 
     private void configureWebView(WebView w) {
@@ -355,9 +411,14 @@ public class MainActivity extends Activity {
      */
     private void registerBackCallback() {
         if (Build.VERSION.SDK_INT < 33) return;
-        backCallback = this::handleBack;
-        getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
-                OnBackInvokedDispatcher.PRIORITY_DEFAULT, backCallback);
+        try {
+            backCallback = this::handleBack;
+            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                    OnBackInvokedDispatcher.PRIORITY_DEFAULT, backCallback);
+        } catch (Throwable e) {
+            // 注册失败就退回 onBackPressed()，不要因此闪退
+            backCallback = null;
+        }
     }
 
     /** 先问网页：面板开着就关面板；没得关才走「再按一次退出」。 */
@@ -395,7 +456,9 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         if (backCallback != null && Build.VERSION.SDK_INT >= 33) {
-            getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(backCallback);
+            try {
+                getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(backCallback);
+            } catch (Throwable ignored) { }
             backCallback = null;
         }
         if (web != null) {
