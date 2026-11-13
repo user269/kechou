@@ -818,14 +818,27 @@ let state = {
   templates: [],        // 联网同步来的作息模板（内置的另算，见 allPresets）
   extras: [],           // 补贴与扣款：{id,name,amount,kind:'add'|'sub',cycle:'monthly'|'once',date}
   schemes: [],          // 保存的计费方案：{id,name,at,snap}
-  meta: { seeded: false, notified: {}, holidaySyncAt: 0, templateSyncAt: 0 },
+  meta: {
+    seeded: false, notified: {}, holidaySyncAt: 0, templateSyncAt: 0,
+    deviceId: '',        // 本机标识，同步时用来区分「哪台设备改的」
+    deviceName: '',      // 用户可改的显示名
+    rev: {}, fp: {}, tomb: {},   // 同步用：各自实体的修改时间、指纹、删除标记
+    syncInit: 0, syncAt: 0, syncPeer: '',
+  },
 };
 
 function save() {
   try {
+    // 记下每条记录的修改时间：同步靠它判断「谁更新」，业务代码不用关心
+    trackChanges();
     localStorage.setItem(STORE_KEY, JSON.stringify(state));
   } catch (e) {
     console.warn('保存失败', e);
+  }
+  // 局域网面板开着时，边改边更新交给对方的快照，
+  // 否则对方拉到的还是打开面板那一刻的数据
+  if (window.__lanOn && window.Native && window.Native.lanPublish) {
+    try { window.Native.lanPublish(JSON.stringify(buildSyncPacket())); } catch (e) { }
   }
   scheduleReminderSync();
 }
@@ -850,6 +863,11 @@ function load() {
         : allBuiltinHolidays(),
       meta: { ...state.meta, ...(data.meta || {}) },
     };
+    // 老版本升级上来：第一次打开时建立同步基线（统一记 0，之后才逐条记真实时间）
+    state.meta.rev = state.meta.rev || {};
+    state.meta.fp = state.meta.fp || {};
+    state.meta.tomb = state.meta.tomb || {};
+    if (!state.meta.deviceId) deviceInfo();
     return true;
   } catch (e) {
     console.warn('读取失败', e);
@@ -2889,6 +2907,11 @@ function renderMine() {
         <div class="rc"><div class="t">备份与恢复</div><div class="s">换手机不丢数据</div></div>
         ${ic('right', 15)}
       </div>
+      <div class="row" data-act="open-sync">
+        <div class="ri" style="background:var(--violet-soft);color:var(--violet)">${ic('swap', 17)}</div>
+        <div class="rc"><div class="t">多设备同步</div><div class="s">${syncMineSub()}</div></div>
+        ${ic('right', 15)}
+      </div>
       <div class="row" data-act="clear-schedule">
         <div class="ri" style="background:var(--rose-soft);color:var(--rose)">${ic('trash', 17)}</div>
         <div class="rc"><div class="t" style="color:var(--rose)">清理课表</div><div class="s">只删课程，设置都保留</div></div>
@@ -2922,7 +2945,7 @@ function renderMine() {
 /* ============================================================
    帮助 · 说明 · 关于
    ============================================================ */
-const APP_VERSION = '1.0.23';
+const APP_VERSION = '1.0.24';
 const APP_BUILD = '2026-11-12';
 
 let helpTab = 'faq';                       // faq | guide | about
@@ -3022,8 +3045,8 @@ const FAQ_GROUPS = [
       },
       {
         q: '数据存在哪里？换手机怎么迁移？',
-        a: `所有数据只保存在本机，<b>不上传、不收集、无广告</b>。<br>换机时先在旧机「我的 → 备份与恢复」导出 JSON，新机装好后用同一个入口选这个文件恢复。<b>卸载或清除数据会一起删掉</b>，建议每月备份一次。`,
-        go: { act: 'backup', text: '立即导出备份' },
+        a: `所有数据只保存在本机，<b>不上传、不收集、无广告</b>。<br>换机时可以「我的 → 多设备同步」，同一个 WiFi 下两台手机直接对传；不方便连同一个 WiFi 就导出同步包用微信发过去。<br>也可以用「备份与恢复」导出 JSON（那个是覆盖恢复，换机用）。<b>卸载或清除数据会一起删掉</b>，建议每月备份一次。`,
+        go: { act: 'sync', text: '打开多设备同步' },
       },
       {
         q: '示例课表怎么清掉？',
@@ -3035,6 +3058,11 @@ const FAQ_GROUPS = [
   {
     name: '口径',
     items: [
+      {
+        q: '两台手机的数据怎么合到一起？',
+        a: `「我的 → 多设备同步」。同一个 WiFi 下，一台点<b>开启接收</b>，另一台点<b>查找另一台手机</b>，找到后点一下就开始传。<br>不方便连同一个 WiFi 时，导出同步包用微信发过去，对方点"导入同步包"。<br>同步是<b>合并</b>不是覆盖：两边各自加的课都留着；同一条记录两边都改过，以改得晚的为准。删掉的课也会同步删掉。全程不经过服务器。`,
+        go: { act: 'sync', text: '打开多设备同步' },
+      },
       {
         q: '跨月的课算哪个月？',
         a: `按<b>上课那天</b>算。比如 12 月 31 日的晚自习，就算 12 月，哪怕下课已经过了零点。<br>所以月初核对时，只要看那个月的账单就是完整的。`,
@@ -3106,6 +3134,7 @@ const GUIDE_STEPS = [
 ];
 
 const CHANGELOG = [
+  { v: '1.0.24', d: '2026-11-13', items: ['新增「多设备同步」：同一个 WiFi 下两台手机直接对传，不经过任何服务器', '也可以导出同步包，用微信发过去再导入', '同步是合并：两边各自加的课都留着，同一条记录以改得晚的为准', '删掉的课也会同步删掉，不会因为另一台还留着就复活'] },
   { v: '1.0.23', d: '2026-11-13', items: ['课表可以直接从 .xlsx 导入，不用再另存为 CSV', 'Excel 里的日期列会自动认出来；表头上方有标题行也没关系', '老式 .xls 仍不支持，会提示另存为 .xlsx 或 CSV'] },
   { v: '1.0.22', d: '2026-11-13', items: ['计费方案可以存多套，换学校、换算法一键切回', '方案能生成一段分享码发给同事，对方粘贴即用', '课时费页新增「学期总览」：整个学期的总额、按月分布、类型占比', '批量导入课表支持直接读 CSV 文件；帮助里补了「口径」问答'] },
   { v: '1.0.21', d: '2026-11-12', items: ['作息模板改为优先走实时线路，更新后不再被 CDN 缓存拖住'] },
@@ -3774,6 +3803,7 @@ function helpGo(go) {
     case 'holidays': openHolidaysSheet(); break;
     case 'io': openScheduleIO('export'); break;
     case 'backup': exportData(); break;
+    case 'sync': openSyncSheet(); break;
     case 'clear': openClearSheet(); break;
     case 'master': schedMode = 'master'; switchTab('schedule'); break;
     case 'schedule': schedMode = 'day'; switchTab('schedule'); break;
@@ -5505,6 +5535,347 @@ function swapLogHtml() {
 function openSwapLog() { openSwapCenter('log'); }
 
 /** 备份与恢复：两件事放在一张面板里，避免「我的」页堆三行。 */
+/* ============================================================
+   多设备同步面板：局域网直传 + 文件包
+   ------------------------------------------------------------
+   两条通道共用一个同步包（buildSyncPacket）和一套合并逻辑，
+   所以「怎么传」和「怎么合」是分开的，以后加蓝牙、加网盘都不用改合并。
+   ============================================================ */
+
+let lanPeers = [];
+let lanInfo = { on: false, ip: '', port: 0, scanning: false };
+let lanTimer = 0;
+let pendSyncPkt = null;
+let lastSyncStats = null;
+
+function hasLan() {
+  try {
+    return !!(window.Native && typeof window.Native.lanStart === 'function');
+  } catch (e) { return false; }
+}
+
+/** 「我的」页那一行的副标题 */
+function syncMineSub() {
+  const at = Number(state.meta.syncAt) || 0;
+  if (!at) return '两台手机，数据合并';
+  const d = new Date(at);
+  return `上次同步 ${d.getMonth() + 1}月${d.getDate()}日 · 与 ${state.meta.syncPeer || '另一台设备'}`;
+}
+
+function syncWhenText() {
+  const at = Number(state.meta.syncAt) || 0;
+  if (!at) return '还没有同步过';
+  const d = new Date(at);
+  const p = n => String(n).padStart(2, '0');
+  return `上次同步 ${d.getMonth() + 1}月${d.getDate()}日 ${p(d.getHours())}:${p(d.getMinutes())}`
+    + (state.meta.syncPeer ? ` · 与 ${state.meta.syncPeer}` : '');
+}
+
+function lanBodyHtml() {
+  if (!hasLan()) {
+    return `<div class="help-note">网页版没有局域网能力。装到手机上就能用「同一 WiFi 直接传」，不用数据线也不用网盘。</div>`;
+  }
+  if (!lanInfo.on) {
+    return `
+      <div class="rows" style="background:#F7F9FC;border-radius:14px">
+        <div class="row" data-act="lan-start" style="padding:12px 13px">
+          <div class="ri" style="background:var(--brand-soft);color:var(--brand)">${ic('swap', 16)}</div>
+          <div class="rc"><div class="t" style="font-size:14px">开启接收</div>
+            <div class="s">同一 WiFi 下的另一台手机就能找到这台</div></div>
+          ${ic('right', 15)}
+        </div>
+      </div>`;
+  }
+  const peers = lanPeers.length
+    ? lanPeers.map((p, i) => `
+        <div class="row" data-act="lan-sync" data-ip="${esc(p.ip)}" data-port="${p.port}" data-name="${esc(p.name || '')}"
+             style="padding:12px 13px${i ? ';border-top:1px solid var(--line-2)' : ''}">
+          <div class="ri" style="background:var(--mint-soft);color:var(--mint)">${ic('grid', 16)}</div>
+          <div class="rc"><div class="t" style="font-size:14px">${esc(p.name || '另一台手机')}</div>
+            <div class="s">${esc(p.ip)}:${p.port} · 点一下开始同步</div></div>
+          ${ic('right', 15)}
+        </div>`).join('')
+    : `<div class="help-note" style="margin:0;padding:12px 13px">${lanInfo.scanning ? '正在找…' : '点下面「查找另一台手机」'}</div>`;
+
+  return `
+    <div class="rows" style="background:#F7F9FC;border-radius:14px">
+      <div class="row" style="padding:12px 13px">
+        <div class="ri" style="background:var(--brand-soft);color:var(--brand)">${ic('info', 16)}</div>
+        <div class="rc"><div class="t" style="font-size:14px">已开启接收</div>
+          <div class="s">${esc(lanInfo.ip || '没连上 WiFi')}${lanInfo.port ? ':' + lanInfo.port : ''}</div></div>
+      </div>
+      ${peers}
+      <div class="row" data-act="lan-scan" style="padding:12px 13px;border-top:1px solid var(--line-2)">
+        <div class="ri" style="background:var(--violet-soft);color:var(--violet)">${ic('spark', 16)}</div>
+        <div class="rc"><div class="t" style="font-size:14px">${lanInfo.scanning ? '正在查找…' : '查找另一台手机'}</div>
+          <div class="s">两台都开到这个页面，成功率最高</div></div>
+        ${ic('right', 15)}
+      </div>
+      <div class="row" data-act="lan-stop" style="padding:12px 13px;border-top:1px solid var(--line-2)">
+        <div class="ri" style="background:#F2F4F7;color:var(--ink-2)">${ic('close', 15)}</div>
+        <div class="rc"><div class="t" style="font-size:14px;color:var(--ink-2)">关闭接收</div>
+          <div class="s">关闭后对方就找不到这台了</div></div>
+      </div>
+    </div>`;
+}
+
+function syncBodyHtml() {
+  const dev = deviceInfo();
+  return `
+    <div class="tiny muted" style="margin:-4px 0 12px">${syncWhenText()}</div>
+
+    <div class="field">
+      <div class="field-label">本机名称 <span class="hint">同步时用来区分是哪台手机</span></div>
+      <input class="input" id="sync-device" maxlength="16" value="${esc(dev.name)}" placeholder="如 张老师的手机">
+    </div>
+
+    <div class="field-label">局域网直传 <span class="hint">同一个 WiFi，不经过任何服务器</span></div>
+    ${lanBodyHtml()}
+
+    <div class="field-label" style="margin-top:16px">用文件同步 <span class="hint">不方便连同一个 WiFi 时</span></div>
+    <div class="rows" style="background:#F7F9FC;border-radius:14px">
+      <div class="row" data-act="sync-export" style="padding:12px 13px">
+        <div class="ri" style="background:var(--mint-soft);color:var(--mint)">${ic('upload', 16)}</div>
+        <div class="rc"><div class="t" style="font-size:14px">导出同步包</div>
+          <div class="s">存成文件，发给另一台手机</div></div>
+        ${ic('right', 15)}
+      </div>
+      <div class="row" data-act="sync-import" style="padding:12px 13px;border-top:1px solid var(--line-2)">
+        <div class="ri" style="background:var(--brand-soft);color:var(--brand)">${ic('download', 16)}</div>
+        <div class="rc"><div class="t" style="font-size:14px">导入同步包</div>
+          <div class="s">合并两份数据，不是覆盖</div></div>
+        ${ic('right', 15)}
+      </div>
+    </div>
+
+    <div class="help-note">
+      同步是<b>合并</b>：两边各自加的课、改的价都会保留；同一条记录两边都改过，以改得晚的为准。
+      删掉的课也会同步删掉。全程不经过服务器，这个文件只在你自己的设备之间传。
+    </div>`;
+}
+
+function openSyncSheet() {
+  openSheet({
+    title: '多设备同步',
+    body: syncBodyHtml(),
+    footer: `<button class="btn ghost" data-close>关闭</button>`,
+  });
+  if (lanInfo.on) startLanPoll();
+}
+
+/* ---- 局域网 ---- */
+
+function lanParse(raw, fallback) {
+  try { return JSON.parse(String(raw)); } catch (e) { return fallback; }
+}
+
+function lanStart() {
+  if (!hasLan()) { toast('这台设备没有局域网能力'); return; }
+  const r = lanParse(window.Native.lanStart(), { ok: false, msg: '启动失败' });
+  if (!r.ok) { toast(r.msg || '没能开启，检查是否连了 WiFi'); return; }
+  lanInfo.on = true;
+  window.__lanOn = true;
+  lanInfo.ip = r.ip || '';
+  lanInfo.port = r.port || 0;
+  lanInfo.scanning = false;
+  lanPeers = [];
+  // 把当前数据交给原生缓存，对方来取就能直接拿到
+  window.Native.lanPublish(JSON.stringify(buildSyncPacket()));
+  refreshSyncSheet();
+  startLanPoll();
+  toast('已开启接收', 'check');
+}
+
+function lanStop() {
+  window.__lanOn = false;
+  if (hasLan()) window.Native.lanStop();
+  lanInfo = { on: false, ip: '', port: 0, scanning: false };
+  lanPeers = [];
+  stopLanPoll();
+  refreshSyncSheet();
+}
+
+function lanScan() {
+  if (!hasLan() || !lanInfo.on) return;
+  lanInfo.scanning = true;
+  refreshSyncSheet();
+  const r = lanParse(window.Native.lanScan(2600), { ok: false, peers: [] });
+  lanInfo.scanning = false;
+  lanPeers = Array.isArray(r.peers)
+    ? r.peers.filter(p => p && p.ip && p.ip !== lanInfo.ip)
+    : [];
+  refreshSyncSheet();
+  if (!lanPeers.length) toast('没找到另一台手机，两台都开到这个页面再试');
+}
+
+function lanSyncTo(el) {
+  const ip = el.dataset.ip, port = Number(el.dataset.port);
+  const name = el.dataset.name || '另一台手机';
+  if (!hasLan()) return;
+  toast('正在和 ' + name + ' 同步…');
+  const r = lanParse(window.Native.lanSync(ip, port, JSON.stringify(buildSyncPacket())), null);
+  if (!r || !r.ok) {
+    toast((r && r.msg) || '连不上，确认两台在同一个 WiFi');
+    return;
+  }
+  let stats = null;
+  if (r.pulled) {
+    try {
+      stats = mergeSyncPacket(r.pulled);
+      save();
+      render();
+    } catch (e) {
+      toast(e && e.message ? e.message : '对方的数据读不了');
+      return;
+    }
+  }
+  lastSyncStats = stats;
+  openSyncResult(stats, name);
+}
+
+/** 对方推过来的包，轮询取回来合并 */
+function lanDrainInbox() {
+  if (!hasLan() || !lanInfo.on) return;
+  const r = lanParse(window.Native.lanInbox(), { items: [] });
+  const items = Array.isArray(r.items) ? r.items : [];
+  if (!items.length) return;
+  let total = null;
+  items.forEach(it => {
+    try {
+      const st = mergeSyncPacket(it.packet);
+      total = total || { added: 0, updated: 0, removed: 0, from: it.from || '另一台手机' };
+      total.added += st.added; total.updated += st.updated; total.removed += st.removed;
+    } catch (e) { /* 坏包直接跳过，不影响其他 */ }
+  });
+  if (total) {
+    save();
+    render();
+    lastSyncStats = total;
+    toast(`已与 ${total.from} 同步：新增 ${total.added}、更新 ${total.updated}`);
+    refreshSyncSheet();
+  }
+}
+
+function startLanPoll() {
+  stopLanPoll();
+  lanTimer = setInterval(() => {
+    // 面板关了就停：没必要在后台一直轮询，省电也省心
+    if (!sheetOpen() || !$('#sync-device')) { stopLanPoll(); return; }
+    try { lanDrainInbox(); } catch (e) { /* 轮询失败不打扰用户 */ }
+  }, 1200);
+}
+
+function stopLanPoll() {
+  if (lanTimer) { clearInterval(lanTimer); lanTimer = 0; }
+}
+
+function refreshSyncSheet() {
+  const body = $('#sheetBody');
+  if (!body || !$('#sync-device')) return;      // 面板已关，别乱重绘
+  body.innerHTML = syncBodyHtml();
+}
+
+/* ---- 文件 ---- */
+
+function exportSyncFile() {
+  const pkt = buildSyncPacket();
+  saveTextAs(`课酬同步_${todayYmd()}.kbsync`, JSON.stringify(pkt, null, 2), 'application/json', '课酬同步包');
+}
+
+function importSyncFile() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'application/json,.kbsync,.json';
+  input.onchange = () => {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        pendSyncPkt = parseSyncPacket(String(reader.result));
+        openSyncPreview(pendSyncPkt);
+      } catch (e) {
+        toast(e && e.message ? e.message : '这个文件不是同步包');
+      }
+    };
+    reader.onerror = () => toast('文件读取失败');
+    reader.readAsText(file);
+  };
+  input.click();
+}
+
+function openSyncPreview(pkt) {
+  const d = pkt.data || {};
+  const dev = (pkt.device && pkt.device.name) || '另一台手机';
+  const at = Number(pkt.at) || 0;
+  const p = n => String(n).padStart(2, '0');
+  const dt = at ? (() => { const x = new Date(at); return `${x.getMonth() + 1}月${x.getDate()}日 ${p(x.getHours())}:${p(x.getMinutes())}`; })() : '';
+  const nLessons = Array.isArray(d.lessons) ? d.lessons.length : 0;
+
+  openSheet({
+    title: '合并这份同步包',
+    body: `
+      <div class="rows" style="background:#F7F9FC;border-radius:14px">
+        <div class="row" style="padding:12px 13px">
+          <div class="ri" style="background:var(--brand-soft);color:var(--brand)">${ic('grid', 16)}</div>
+          <div class="rc"><div class="t" style="font-size:14px">${esc(dev)}</div>
+            <div class="s">${nLessons} 节课${dt ? ' · ' + dt + ' 导出' : ''}</div></div>
+        </div>
+        <div class="row" style="padding:12px 13px;border-top:1px solid var(--line-2)">
+          <div class="rc"><div class="t" style="font-size:13.5px">本机现有</div></div>
+          <div class="rv">${state.lessons.length} 节课</div>
+        </div>
+      </div>
+      <div class="help-note">
+        合并<b>不会覆盖</b>本机数据：两边各自加的课都留下，同一条记录两边都改过时以改得晚的为准。
+        删除也会同步过来。
+      </div>`,
+    footer: `<button class="btn ghost" data-close>取消</button>
+      <button class="btn" data-act="sync-apply">合并</button>`,
+  });
+}
+
+function applySyncPkt() {
+  if (!pendSyncPkt) return;
+  let stats;
+  try {
+    stats = mergeSyncPacket(pendSyncPkt);
+  } catch (e) {
+    toast(e && e.message ? e.message : '合并失败');
+    return;
+  }
+  pendSyncPkt = null;
+  save();
+  render();
+  lastSyncStats = stats;
+  openSyncResult(stats, stats.from);
+}
+
+function openSyncResult(stats, from) {
+  const s = stats || { added: 0, updated: 0, removed: 0 };
+  const rows = [
+    ['新增', s.added, 'var(--mint)'],
+    ['更新', s.updated, 'var(--brand)'],
+    ['删除', s.removed, 'var(--rose)'],
+  ].filter(x => x[1] > 0);
+
+  openSheet({
+    title: '同步完成',
+    body: `
+      <div class="help-note" style="margin-top:0">已与 <b>${esc(from || '另一台手机')}</b> 合并，本机现在有 ${state.lessons.length} 节课。</div>
+      <div class="rows" style="background:#F7F9FC;border-radius:14px;margin-top:12px">
+        ${rows.length ? rows.map((r, i) => `
+          <div class="row" style="padding:12px 13px${i ? ';border-top:1px solid var(--line-2)' : ''}">
+            <div class="rc"><div class="t" style="font-size:13.5px">${r[0]}</div></div>
+            <div class="rv" style="color:${r[2]}">${r[1]} 条</div>
+          </div>`).join('')
+    : '<div class="help-note" style="margin:0;padding:12px 13px">两边已经一致，没有需要合并的改动。</div>'}
+      </div>
+      <div class="help-note">建议也把这次结果同步回对方，两边就完全一致了。</div>`,
+    footer: `<button class="btn" data-close>好</button>`,
+  });
+}
+
 function openBackupSheet() {
   openSheet({
     title: '备份与恢复',
@@ -5901,6 +6272,383 @@ function exportMonthStatement() {
   saveTextAs(`课酬账单_${payMonth}.csv`, monthStatementCsv(payMonth), 'text/csv', '账单表格');
 }
 
+/* ============================================================
+   同步引擎：记录级修订 + 双向合并
+   ------------------------------------------------------------
+   目标：两台设备各改各的，同步之后谁的改动都不丢。
+   做法：
+     1) 每次保存时给每条记录算一个指纹。指纹变了就记下修改时间（rev），
+        记录消失了就留一个删除标记（tomb，带时间）——否则下次同步会被对方"复活"。
+     2) 同步时按实体对齐：同一实体谁的时间新用谁；只有删除标记足够新才算真删，
+        否则一律当成"对方还没有这条"。
+   合并以并集为底，所以不会因为一端数据旧就把那边的课抹掉。
+   ============================================================ */
+
+/** 各实体集合：prefix 用于生成实体键，取 id 的方式各不相同 */
+const SYNC_SETS = [
+  { key: 'lessons',   p: 'l', get: s => s.lessons || [],   id: r => r && r.id },
+  { key: 'swaps',     p: 'w', get: s => s.swaps || [],     id: r => r && r.id },
+  { key: 'adjusts',   p: 'j', get: s => s.adjusts || [],   id: r => r && r.id },
+  { key: 'extras',    p: 'x', get: s => s.extras || [],    id: r => r && r.id },
+  { key: 'schemes',   p: 'c', get: s => s.schemes || [],   id: r => r && r.id },
+  { key: 'types',     p: 't', get: s => s.types || [],     id: r => r && r.id },
+  { key: 'periods',   p: 'q', get: s => s.periods || [],   id: r => r && r.no != null ? String(r.no) : '' },
+  { key: 'holidays',  p: 'h', get: s => s.holidays || [],  id: r => r && r.date },
+  { key: 'templates', p: 'n', get: s => s.templates || [], id: r => r && r.id },
+];
+
+/** 键值对实体：master 的总课表模板，键本身就是身份 */
+const SYNC_MAPS = [
+  { key: 'master', p: 'k', get: s => s.master || {} },
+];
+
+/** 扁平配置：按字段合并，改单价和改系数互不覆盖 */
+const SYNC_FLATS = [
+  { key: 'settings', p: 's', get: s => s.settings || {} },
+  { key: 'teacher',  p: 'r', get: s => s.teacher || {} },
+];
+
+/** 键序稳定的序列化：同一份内容永远得到同一个字符串 */
+function stableKey(v) {
+  if (v === null || typeof v !== 'object') return JSON.stringify(v === undefined ? null : v);
+  if (Array.isArray(v)) return '[' + v.map(stableKey).join(',') + ']';
+  const ks = Object.keys(v).filter(k => v[k] !== undefined).sort();
+  return '{' + ks.map(k => JSON.stringify(k) + ':' + stableKey(v[k])).join(',') + '}';
+}
+
+/** FNV-1a 32 位，够用来判断"变没变"，不需要抗碰撞强度 */
+function shortHash(str) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = (h + (h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24)) >>> 0;
+  }
+  return h.toString(16).padStart(8, '0');
+}
+
+/** 把整份状态摊平成 Map<实体键, {fp, rec}> */
+function collectEntities(st) {
+  const map = new Map();
+  SYNC_SETS.forEach(def => {
+    (def.get(st) || []).forEach(rec => {
+      const id = def.id(rec);
+      if (id == null || id === '') return;
+      const k = def.p + ':' + id;
+      map.set(k, { fp: shortHash(stableKey(rec)), rec });
+    });
+  });
+  SYNC_MAPS.forEach(def => {
+    const obj = def.get(st) || {};
+    Object.keys(obj).forEach(k2 => {
+      map.set(def.p + ':' + k2, { fp: shortHash(stableKey(obj[k2])), rec: obj[k2] });
+    });
+  });
+  SYNC_FLATS.forEach(def => {
+    const obj = def.get(st) || {};
+    Object.keys(obj).forEach(f => {
+      if (f === 'updateCache' || f === 'lastUpdateOk') return;   // 纯本机状态，不同步
+      map.set(def.p + '.' + f, { fp: shortHash(stableKey(obj[f])) });
+    });
+  });
+  return map;
+}
+
+/**
+ * 比对指纹，更新修订表。save() 里顺手调用，业务代码不用管"我该不该记时间"。
+ * 首次建立基线时统一记 0：那是"历史数据，不知道谁先改的"，
+ * 合并时并列取本地，等价于各留各的，不会出现一边全胜一边全丢。
+ */
+function trackChanges() {
+  const now = Date.now();
+  const meta = state.meta;
+  if (!meta.rev) meta.rev = {};
+  if (!meta.fp) meta.fp = {};
+  if (!meta.tomb) meta.tomb = {};
+
+  const cur = collectEntities(state);
+  const base = meta.syncInit ? { ...meta.fp } : null;
+
+  cur.forEach((e, k) => {
+    if (!base) { meta.rev[k] = 0; meta.fp[k] = e.fp; return; }
+    if (base[k] !== e.fp) {
+      meta.rev[k] = now;
+      meta.fp[k] = e.fp;
+      delete meta.tomb[k];
+    }
+  });
+
+  if (base) {
+    Object.keys(base).forEach(k => {
+      if (cur.has(k)) return;
+      meta.tomb[k] = now;
+      delete meta.rev[k];
+      delete meta.fp[k];
+    });
+  }
+  meta.syncInit = 1;
+}
+
+/** 删除标记留太久没意义，顺手清掉，别让它把存储撑大 */
+function pruneSyncMeta() {
+  const meta = state.meta;
+  const alive = collectEntities(state);
+  const keepKeys = new Set(alive.keys());
+
+  Object.keys(meta.fp || {}).forEach(k => { if (!keepKeys.has(k)) delete meta.fp[k]; });
+  Object.keys(meta.rev || {}).forEach(k => { if (!keepKeys.has(k)) delete meta.rev[k]; });
+
+  const cutoff = Date.now() - 180 * 86400000;
+  Object.keys(meta.tomb || {}).forEach(k => {
+    if (Number(meta.tomb[k]) < cutoff) delete meta.tomb[k];
+  });
+}
+
+function deviceInfo() {
+  const meta = state.meta;
+  if (!meta.deviceId) meta.deviceId = 'd' + Math.random().toString(36).slice(2, 10);
+  let model = '';
+  try {
+    const n = window.Native;
+    if (n && typeof n.deviceName === 'function') model = String(n.deviceName() || '');
+  } catch (e) { model = ''; }
+  if (!model && typeof navigator !== 'undefined' && navigator.userAgent) {
+    const m = /Android[^;]*;\s*([^)]+)\)/.exec(navigator.userAgent);
+    model = m ? m[1].split('Build')[0].trim() : '';
+  }
+  return { id: meta.deviceId, name: meta.deviceName || model || '这台设备', model };
+}
+
+function setDeviceName(name) {
+  state.meta.deviceName = String(name || '').trim().slice(0, 16);
+  save();
+}
+
+/* ---- 同步包 ---- */
+
+const SYNC_MAGIC = 'kbsync';
+
+function buildSyncPacket() {
+  // 有些字段只对本机有意义（更新清单缓存、上次检查时间），传过去反而会
+  // 让对方的「检查更新」显示成没检查过，直接在包里剔掉
+  const settings = { ...state.settings };
+  delete settings.updateCache;
+  delete settings.lastUpdateOk;
+
+  return {
+    kb: SYNC_MAGIC,
+    v: 1,
+    device: deviceInfo(),
+    at: Date.now(),
+    rev: state.meta.rev || {},
+    tomb: state.meta.tomb || {},
+    data: {
+      teacher: state.teacher,
+      settings,
+      types: state.types,
+      periods: state.periods,
+      lessons: state.lessons,
+      swaps: state.swaps,
+      master: state.master,
+      adjusts: state.adjusts,
+      holidays: state.holidays,
+      templates: state.templates,
+      extras: state.extras,
+      schemes: state.schemes,
+    },
+  };
+}
+
+/** 接受字符串或已解析对象；格式不对抛中文错误，界面直接显示 */
+function parseSyncPacket(input) {
+  let pkt = input;
+  if (typeof input === 'string') {
+    try {
+      pkt = JSON.parse(input);
+    } catch (e) {
+      throw new Error('这段内容不是有效的同步包');
+    }
+  }
+  if (!pkt || pkt.kb !== SYNC_MAGIC) throw new Error('不是课酬的同步包');
+  if (Number(pkt.v) > 1) throw new Error('同步包来自更新版本，请先升级');
+  if (!pkt.data || typeof pkt.data !== 'object') throw new Error('同步包里没有数据');
+  return pkt;
+}
+
+/**
+ * 合并：把 pkt 的改动并进本地状态，返回统计。
+ * 不覆盖、不删除对方的独有数据——只按修订时间取新。
+ */
+function mergeSyncPacket(input) {
+  const pkt = parseSyncPacket(input);
+  const remote = pkt.data;
+  const rrev = pkt.rev || {};
+  const rtomb = pkt.tomb || {};
+
+  const meta = state.meta;
+  if (!meta.rev) meta.rev = {};
+  if (!meta.tomb) meta.tomb = {};
+  const lrev = meta.rev;
+  const ltomb = meta.tomb;
+
+  const stats = { added: 0, updated: 0, removed: 0, kept: 0, from: (pkt.device && pkt.device.name) || '另一台设备' };
+
+  // 先保证本地修订表是最新的（否则刚做的改动会被判成"旧"）
+  trackChanges();
+
+  /** 判断某个实体该取哪边 */
+  const pick = (k, localRec, hasLocal, remoteRec, hasRemote) => {
+    const lr = Number(lrev[k]) || 0;
+    const rr = Number(rrev[k]) || 0;
+    const lt = Number(ltomb[k]) || 0;
+    const rt = Number(rtomb[k]) || 0;
+
+    // 对方删除了这条，且删除时间不早于本地的最后修改
+    if (rt && rt >= lr && !(lt && lt > rt)) return { act: 'del', rev: rt, tomb: rt };
+    // 本地删除了，对方也没更新的版本
+    if (lt && lt > rr) return { act: 'del', rev: lt, tomb: lt };
+
+    if (hasRemote && !hasLocal) return { act: 'add', rec: remoteRec, rev: Math.max(rr, lr) };
+    if (hasRemote && hasLocal) {
+      if (rr > lr) return { act: 'upd', rec: remoteRec, rev: rr };
+      return { act: 'same', rec: localRec, rev: lr };
+    }
+    return { act: 'keep', rec: localRec, rev: lr };
+  };
+
+  // 集合类：按本地顺序走一遍（保留/更新/删除），远端独有的追加在后面。
+  // 这样合并后课表顺序基本不变，不会因为同步一次就乱了序。
+  SYNC_SETS.forEach(def => {
+    const byId = new Map();
+    (def.get(state) || []).forEach(r => {
+      const id = def.id(r);
+      if (id != null && id !== '') byId.set(String(id), r);
+    });
+    const remoteById = new Map();
+    (def.get(remote) || []).forEach(r => {
+      const id = def.id(r);
+      if (id != null && id !== '') remoteById.set(String(id), r);
+    });
+
+    const out = [];
+    byId.forEach((rec, id) => {
+      const k = def.p + ':' + id;
+      const r = pick(k, rec, true, remoteById.get(id), remoteById.has(id));
+      if (r.act === 'del') {
+        stats.removed++;
+        delete lrev[k];
+        ltomb[k] = r.tomb || Date.now();
+        return;
+      }
+      if (r.act === 'upd') { out.push(r.rec); stats.updated++; }
+      else out.push(rec);
+      if (r.rev) lrev[k] = r.rev;
+      delete ltomb[k];
+    });
+
+    remoteById.forEach((rec, id) => {
+      if (byId.has(id)) return;
+      const k = def.p + ':' + id;
+      const r = pick(k, null, false, rec, true);
+      if (r.act === 'del') { delete lrev[k]; ltomb[k] = r.tomb || Date.now(); return; }
+      out.push(r.rec || rec);
+      stats.added++;
+      lrev[k] = r.rev || Date.now();
+      delete ltomb[k];
+    });
+
+    state[def.key] = out;
+  });
+
+  // 键值类（总课表模板）：逐键判断，键就是身份
+  SYNC_MAPS.forEach(def => {
+    const next = { ...(def.get(state) || {}) };
+    const remoteObj = def.get(remote) || {};
+    Object.keys(remoteObj).forEach(id => {
+      const k = def.p + ':' + id;
+      const hasL = Object.prototype.hasOwnProperty.call(next, id);
+      const r = pick(k, next[id], hasL, remoteObj[id], true);
+      if (r.act === 'del') {
+        if (hasL) { delete next[id]; stats.removed++; }
+        delete lrev[k];
+        ltomb[k] = r.tomb || Date.now();
+        return;
+      }
+      if (r.act === 'add') { next[id] = r.rec; stats.added++; }
+      else if (r.act === 'upd') { next[id] = r.rec; stats.updated++; }
+      if (r.rev) lrev[k] = r.rev;
+      delete ltomb[k];
+    });
+    // 本地独有的键：对方删过就删，没删就留
+    Object.keys(next).forEach(id => {
+      if (Object.prototype.hasOwnProperty.call(remoteObj, id)) return;
+      const k = def.p + ':' + id;
+      const rt = Number(rtomb[k]) || 0;
+      const lr = Number(lrev[k]) || 0;
+      if (rt && rt >= lr) {
+        delete next[id];
+        stats.removed++;
+        delete lrev[k];
+        ltomb[k] = rt;
+      }
+    });
+    state[def.key] = next;
+  });
+
+  // 扁平配置：逐字段判断，改单价和改系数互不覆盖
+  SYNC_FLATS.forEach(def => {
+    const next = { ...(def.get(state) || {}) };
+    const remoteObj = def.get(remote) || {};
+    Object.keys(remoteObj).forEach(f => {
+      if (f === 'updateCache' || f === 'lastUpdateOk') return;   // 纯本机状态，不同步
+      const k = def.p + '.' + f;
+      const lr = Number(lrev[k]) || 0;
+      const rr = Number(rrev[k]) || 0;
+      const rt = Number(rtomb[k]) || 0;
+      if (rt && rt >= lr) {
+        delete next[f];
+        delete lrev[k];
+        ltomb[k] = rt;
+        return;
+      }
+      if (rr > lr) {
+        next[f] = remoteObj[f];
+        lrev[k] = rr;
+        delete ltomb[k];
+        stats.updated++;
+      }
+    });
+    state[def.key] = next;
+  });
+
+  // 合并完重算指纹，避免下一轮 save 把刚合进来的记录当成"本地新改"
+  const fresh = collectEntities(state);
+  meta.fp = {};
+  fresh.forEach((e, k) => { meta.fp[k] = e.fp; });
+
+  // 修订表对齐：取双方较大值，下次同步不会重复搬运。
+  // 删除标记只在「本地确实没有这条」时才接受——否则刚被较新修改救活的记录
+  // 会带着对方的旧墓碑传下去，下一轮又被删掉（这个坑真踩过）。
+  Object.keys(rrev).forEach(k => {
+    const r = Number(rrev[k]) || 0;
+    if (r > (Number(lrev[k]) || 0)) lrev[k] = r;
+  });
+  Object.keys(rtomb).forEach(k => {
+    const r = Number(rtomb[k]) || 0;
+    if (r > (Number(ltomb[k]) || 0) && !fresh.has(k)) ltomb[k] = r;
+  });
+
+  // 兜底：记录在，墓碑就不该留。防止前面任何一条分支漏清理
+  Object.keys(ltomb).forEach(k => {
+    if (fresh.has(k)) delete ltomb[k];
+  });
+  meta.syncInit = 1;
+  meta.syncAt = Date.now();
+  meta.syncPeer = stats.from;
+
+  return stats;
+}
+
+
 function exportData() {
   saveTextAs(`课酬备份_${todayYmd()}.json`, JSON.stringify(state, null, 2), 'application/json', '课酬备份');
 }
@@ -5956,7 +6704,15 @@ function importDataFile() {
               settings: { ...defaultSettings(), ...(data.settings || {}) },
               periods: (data.periods && data.periods.length) ? data.periods : state.periods,
               types: (data.types && data.types.length) ? data.types : state.types,
-              meta: { ...state.meta, ...(data.meta || {}) },
+              // 备份里的 rev/tomb 属于那台设备，恢复后必须重建，
+              // 否则本机会带着别人的时间戳参与合并，判断「谁更新」就错了
+              meta: {
+                ...state.meta,
+                ...(data.meta || {}),
+                deviceId: state.meta.deviceId,
+                deviceName: state.meta.deviceName,
+                rev: {}, fp: {}, tomb: {}, syncInit: 0, syncAt: 0,
+              },
             };
             save(); render(); toast('已恢复备份', 'check');
           },
@@ -7198,6 +7954,16 @@ document.addEventListener('click', e => {
     case 'export-data': exportData(); break;
     case 'import-data': importDataFile(); break;
 
+    /* 多设备同步 */
+    case 'open-sync': openSyncSheet(); break;
+    case 'sync-export': exportSyncFile(); break;
+    case 'sync-import': importSyncFile(); break;
+    case 'sync-apply': applySyncPkt(); break;
+    case 'lan-start': lanStart(); break;
+    case 'lan-stop': lanStop(); break;
+    case 'lan-scan': lanScan(); break;
+    case 'lan-sync': lanSyncTo(el); break;
+
     /* 月账单：复制文字 / 导出表格 */
     case 'stmt-copy': copyMonthStatement(); break;
     case 'stmt-csv': exportMonthStatement(); break;
@@ -7327,6 +8093,11 @@ document.addEventListener('change', e => {
   if (e.target.id === 'f-dur' && draft) {
     captureLessonForm();
     renderLessonSheet();
+  }
+  // 同步面板：改本机名称
+  if (e.target.id === 'sync-device') {
+    setDeviceName(e.target.value);
+    toast('已改名', 'check');
   }
   // 总课表：手动填延长分钟数后刷新费用说明
   if (e.target.id === 'm-extend' && draftMaster) {

@@ -333,6 +333,44 @@ public class WebBridge {
         updater().resetWeb();
     }
 
+    /* ---------- 局域网同步：同一个 WiFi 下直接换数据，不经过服务器 ---------- */
+
+    @JavascriptInterface
+    public String lanStart() {
+        return LanSync.start(act);
+    }
+
+    @JavascriptInterface
+    public void lanStop() {
+        LanSync.stop();
+    }
+
+    @JavascriptInterface
+    public void lanPublish(String json) {
+        LanSync.publish(json);
+    }
+
+    @JavascriptInterface
+    public String lanScan(int timeoutMs) {
+        return LanSync.scan(timeoutMs);
+    }
+
+    @JavascriptInterface
+    public String lanSync(String ip, int port, String packet) {
+        return LanSync.sync(ip, port, packet);
+    }
+
+    @JavascriptInterface
+    public String lanInbox() {
+        return LanSync.inbox();
+    }
+
+    /** 机型名，同步时用来区分是哪台手机 */
+    @JavascriptInterface
+    public String deviceName() {
+        return LanSync.deviceName();
+    }
+
     @JavascriptInterface
     public void reloadPage() {
         act.runOnUiThread(() -> {

@@ -91,8 +91,8 @@ console.log('\n【4】分组结构与行数');
   };
   ok(rowsOf(0) === 2, '计费 2 行（班级系数并入计费公式）', rowsOf(0));
   ok(rowsOf(1) === 4, '课表与提醒 4 行', rowsOf(1));
-  ok(rowsOf(2) === 3, '数据 3 行', rowsOf(2));
-  ok($$(w, '#page-mine .row').length === 9, '整页 9 行', $$(w, '#page-mine .row').length);
+  ok(rowsOf(2) === 4, '数据 4 行（含多设备同步）', rowsOf(2));
+  ok($$(w, '#page-mine .row').length === 10, '整页 10 行', $$(w, '#page-mine .row').length);
   ok($$(w, '#page-mine .mine-actions').length === 0, '不再有并排的次级按钮');
 }
 

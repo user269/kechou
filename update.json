@@ -1,18 +1,19 @@
 {
-  "versionCode": 24,
-  "versionName": "1.0.23",
+  "versionCode": 25,
+  "versionName": "1.0.24",
   "notes": [
-    "课表可直接从 .xlsx 导入，不用先另存为 CSV",
-    "Excel 的日期列自动识别；表头上方有标题行也能读",
-    "老式 .xls 会提示另存为 .xlsx 或 CSV"
+    "新增「多设备同步」：同一个 WiFi 下两台手机直接对传，不经过任何服务器",
+    "也可以导出同步包，用微信发过去再导入",
+    "同步是合并：两边各自加的课都留着，同一条记录以改得晚的为准",
+    "删掉的课也会同步删掉，不会因为另一台还留着就复活"
   ],
   "apk": {
-    "url": "https://github.com/user269/kechou/releases/download/v1.0.23/kebao-1.0.23.apk",
-    "size": 390391,
+    "url": "https://github.com/user269/kechou/releases/download/v1.0.24/kebao-1.0.24.apk",
+    "size": 406772,
     "mirrors": [
-      "https://ghfast.top/https://github.com/user269/kechou/releases/download/v1.0.23/kebao-1.0.23.apk",
-      "https://gh-proxy.com/https://github.com/user269/kechou/releases/download/v1.0.23/kebao-1.0.23.apk",
-      "https://ghproxy.net/https://github.com/user269/kechou/releases/download/v1.0.23/kebao-1.0.23.apk"
+      "https://ghfast.top/https://github.com/user269/kechou/releases/download/v1.0.24/kebao-1.0.24.apk",
+      "https://gh-proxy.com/https://github.com/user269/kechou/releases/download/v1.0.24/kebao-1.0.24.apk",
+      "https://ghproxy.net/https://github.com/user269/kechou/releases/download/v1.0.24/kebao-1.0.24.apk"
     ]
   },
   "web": {
@@ -21,5 +22,5 @@
     "size": 0,
     "notes": []
   },
-  "updated": "2026-11-13T00:35:13Z"
+  "updated": "2026-11-13T01:39:29Z"
 }
