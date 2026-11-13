@@ -18,13 +18,26 @@ const ok = (cond, name, extra) => {
 const clock = { t: 1000000 };
 const wins = [];
 
-function boot() {
+function boot(nativeStub) {
   let html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
   html = html.replace(/<script[^>]*src=[^>]*><\/script>/g, '');
   const dom = new JSDOM(html, { url: 'https://kebao.local/', runScripts: 'dangerously', pretendToBeVisual: true });
   const w = dom.window;
   w.__now = clock.t;
   w.Notification = class { static permission = 'granted'; static requestPermission() { return Promise.resolve('granted'); } };
+  // 必须在执行 app.js 之前挂上：app.js 顶部的 `const NATIVE = window.KebaoNative` 是执行时求值的。
+  // 基础能力统一补齐，各场景只声明自己关心的差异，免得初始化时到处报"不是函数"。
+  if (nativeStub) {
+    w.KebaoNative = Object.assign({
+      version: () => '1.1.1',
+      syncReminders: () => '{"ok":true}',
+      syncRemindersEcho: () => '{"ok":true}',
+      hasNotifyPermission: () => true,
+      requestNotifyPermission: () => { },
+      canScheduleExact: () => true,
+      saveFileAs: () => { },
+    }, nativeStub);
+  }
   w.eval(fs.readFileSync(path.join(ROOT, 'app.js'), 'utf8') + `
 window.__now = ${clock.t};
 Date.now = () => window.__now;
@@ -231,10 +244,9 @@ ok(uniq.size === A.state.lessons.length, 'A 没有重复记录', A.state.lessons
 ok(A.state.lessons.length === C.state.lessons.length, 'A 与 C 条数一致', [A.state.lessons.length, C.state.lessons.length]);
 
 console.log('\n【17】局域网通道：原生返回的那串 JSON 能正确消化');
-const wl = boot();
-const L = wl.__api;
 let published = null, scanned = 0;
-wl.Native = {
+const wl = boot({
+  version: () => '1.1.1',
   lanStart: () => JSON.stringify({ ok: true, ip: '192.168.1.23', port: 8801, code: '3847' }),
   lanStop: () => { },
   lanPublish: j => { published = j; },
@@ -247,7 +259,8 @@ wl.Native = {
   lanSyncPoll: () => JSON.stringify({ state: 'done', result: { ok: true, pulled: A.buildSyncPacket(), pushed: true } }),
   lanInbox: () => JSON.stringify({ items: [] }),
   deviceName: () => 'Redmi K70',
-};
+});
+const L = wl.__api;
 ok(L.hasLan() === true, '识别到原生能力', L.hasLan());
 L.openSyncSheet();
 L.lanStart();
@@ -272,33 +285,31 @@ ok(L.state.lessons.length >= beforeLessons, '同步后课程没有减少', [befo
 ok(L.state.meta.syncPeer === 'Xiaomi 14' || L.state.meta.syncPeer === fromName(A), '记下了同步对象', L.state.meta.syncPeer);
 
 console.log('\n【18】对方推过来的包：正常合、坏包跳过');
-const wl2 = boot();
+const wl2 = boot({
+  version: () => '1.1.1',
+  lanStart: () => JSON.stringify({ ok: true, ip: '192.168.1.23', port: 8801 }),
+  lanScanStart: () => '{"ok":true}',
+  lanSyncStart: () => '{"ok":true}',
+  lanInbox: () => JSON.stringify({ items: [
+    { from: 'Xiaomi 14', packet: '{这不是 json' },     // 坏包，应被跳过
+    { from: 'Xiaomi 14', packet: A.buildSyncPacket() },
+  ] }),
+  lanPublish: () => { },
+});
 const L2 = wl2.__api;
 L2.state.lessons.length = 0;
 L2.state.master = {};
 L2.state.meta.rev = {}; L2.state.meta.fp = {}; L2.state.meta.tomb = {}; L2.state.meta.syncInit = 0;
 tick(); L2.save();
 
-const good = A.buildSyncPacket();
-wl2.Native = {
-  lanStart: () => JSON.stringify({ ok: true, ip: '192.168.1.23', port: 8801 }),
-  lanScanStart: () => '{"ok":true}',
-  lanSyncStart: () => '{"ok":true}',
-  lanInbox: () => JSON.stringify({ items: [
-    { from: 'Xiaomi 14', packet: '{这不是 json' },     // 坏包，应被跳过
-    { from: 'Xiaomi 14', packet: good },
-  ] }),
-  lanPublish: () => { },
-};
 L2.openSyncSheet();
 L2.lanInfo.on = true;
 L2.lanDrainInbox();
 ok(L2.state.lessons.length === A.state.lessons.length, '好包合进来了、坏包没影响', [L2.state.lessons.length, A.state.lessons.length]);
 
 console.log('\n【19】原生报错时不崩，只提示');
-const wl3 = boot();
-const L3 = wl3.__api;
-wl3.Native = {
+const wl3 = boot({
+  version: () => '1.1.1',
   lanStart: () => JSON.stringify({ ok: false, msg: '没能开启：端口被占用' }),
   lanPublish: () => { },
   lanScanStart: () => 'not json at all',
@@ -306,9 +317,9 @@ wl3.Native = {
   lanSyncStart: () => 'not json',
   lanSyncPoll: () => 'not json',
   lanInbox: () => 'broken',
-  lanPublish: () => { },
   deviceName: () => '',
-};
+});
+const L3 = wl3.__api;
 L3.openSyncSheet();
 L3.lanStart();
 ok(L3.lanInfo.on === false, '启动失败时状态仍是关的', L3.lanInfo);
@@ -325,10 +336,9 @@ await sleep(500);
 ok(!threw2, '同步失败不抛异常');
 
 console.log('\n【20】配对码不是 4 位数字就不放行');
-const wl4 = boot();
-const L4 = wl4.__api;
 let called = 0;
-wl4.Native = {
+const wl4 = boot({
+  version: () => '1.1.1',
   lanStart: () => JSON.stringify({ ok: true, ip: '192.168.1.23', port: 8801, code: '3847' }),
   lanScanStart: () => '{"ok":true}',
   lanSyncStart: () => { called++; return '{"ok":true}'; },
@@ -336,7 +346,8 @@ wl4.Native = {
   lanPublish: () => { },
   lanInbox: () => '{"items":[]}',
   deviceName: () => 'X',
-};
+});
+const L4 = wl4.__api;
 L4.openSyncSheet();
 L4.lanAskCode({ dataset: { ip: '192.168.1.57', port: '8801', name: 'A' } });
 const inp = wl4.document.querySelector('#lan-code');
@@ -348,14 +359,13 @@ L4.lanGo();
 ok(called === 0, '非数字不发请求', called);
 
 console.log('\n【21】界面是新的、安装包是旧的（这次的线上问题）');
-const wOld = boot();
-const OLD = wOld.__api;
-// 旧 APK：有 Native（能存文件、能改名），但没有后来加的局域网方法
-wOld.Native = {
+// 旧 APK：有 KebaoNative（能存文件），但没有后来加的局域网方法
+const wOld = boot({
   version: () => '1.0.23',
   saveFileAs: () => { },
   deviceName: () => 'V2302A',
-};
+});
+const OLD = wOld.__api;
 const info = OLD.nativeInfo();
 ok(info.native === true, '认得出是在手机里跑', info);
 ok(info.lan === false, '局域网能力判定为不可用', info.lan);
@@ -379,29 +389,27 @@ ok(WEB.nativeInfo().native === false, '没有 Native', WEB.nativeInfo());
 ok(/网页版没有局域网能力/.test(WEB.lanBodyHtml()), '才是网页版文案');
 
 console.log('\n【23】能力齐全时说「开启接收」');
-const wOk = boot();
-const OK = wOk.__api;
-wOk.Native = {
-  version: () => '1.1.0',
+const wOk = boot({
+  version: () => '1.1.1',
   lanStart: () => '{"ok":true,"ip":"1.2.3.4","port":1,"code":"0000"}',
   lanScanStart: () => '{"ok":true}',
   lanSyncStart: () => '{"ok":true}',
   lanInbox: () => '{"items":[]}',
   lanPublish: () => { },
-};
+});
+const OK = wOk.__api;
 ok(OK.nativeInfo().lan === true, '能力齐全');
 ok(/开启接收/.test(OK.lanBodyHtml()), '显示开启接收入口', OK.lanBodyHtml().slice(0, 40));
 
 console.log('\n【24】缺一个方法也要当成不可用（1.0.25 那种半新不旧的包）');
-const wHalf = boot();
-const HALF = wHalf.__api;
-wHalf.Native = {
+const wHalf = boot({
   version: () => '1.0.25',
   lanStart: () => '{"ok":true}',      // 有 lanStart
   lanInbox: () => '{"items":[]}',
   lanSyncStart: () => '{"ok":true}',
   // 少了 lanScanStart —— 点「查找」会静默失败
-};
+});
+const HALF = wHalf.__api;
 const halfInfo = HALF.nativeInfo();
 ok(halfInfo.lan === false, '缺一个就判不可用', halfInfo.missing);
 ok(halfInfo.missing.includes('lanScanStart'), '指出缺的是哪个', halfInfo.missing);

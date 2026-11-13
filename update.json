@@ -1,18 +1,17 @@
 {
-  "versionCode": 28,
-  "versionName": "1.1.1",
+  "versionCode": 29,
+  "versionName": "1.1.2",
   "notes": [
-    "同步页的提示说准了：能分清是安装包旧了还是网络不通",
-    "安装包落后时直接给「更新安装包」按钮，装完就能用局域网直传",
-    "修掉面板底部说明被按钮挡住一截的问题"
+    "修好局域网直传：之前一直识别不到手机的原生能力，同步页只显示「网页版」",
+    "现在能正常显示配对码、查找另一台手机、输码就能传"
   ],
   "apk": {
-    "url": "https://github.com/user269/kechou/releases/download/v1.1.1/kebao-1.1.1.apk",
+    "url": "https://github.com/user269/kechou/releases/download/v1.1.2/kebao-1.1.2.apk",
     "size": 414967,
     "mirrors": [
-      "https://ghfast.top/https://github.com/user269/kechou/releases/download/v1.1.1/kebao-1.1.1.apk",
-      "https://gh-proxy.com/https://github.com/user269/kechou/releases/download/v1.1.1/kebao-1.1.1.apk",
-      "https://ghproxy.net/https://github.com/user269/kechou/releases/download/v1.1.1/kebao-1.1.1.apk"
+      "https://ghfast.top/https://github.com/user269/kechou/releases/download/v1.1.2/kebao-1.1.2.apk",
+      "https://gh-proxy.com/https://github.com/user269/kechou/releases/download/v1.1.2/kebao-1.1.2.apk",
+      "https://ghproxy.net/https://github.com/user269/kechou/releases/download/v1.1.2/kebao-1.1.2.apk"
     ]
   },
   "web": {
@@ -21,5 +20,5 @@
     "size": 0,
     "notes": []
   },
-  "updated": "2026-11-13T07:08:06Z"
+  "updated": "2026-11-13T07:18:29Z"
 }

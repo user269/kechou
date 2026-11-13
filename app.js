@@ -999,8 +999,8 @@ function save() {
   }
   // 局域网面板开着时，边改边更新交给对方的快照，
   // 否则对方拉到的还是打开面板那一刻的数据
-  if (window.__lanOn && window.Native && window.Native.lanPublish) {
-    try { window.Native.lanPublish(JSON.stringify(buildSyncPacket())); } catch (e) { }
+  if (window.__lanOn && NATIVE && NATIVE.lanPublish) {
+    try { NATIVE.lanPublish(JSON.stringify(buildSyncPacket())); } catch (e) { }
   }
   scheduleReminderSync();
 }
@@ -3117,7 +3117,7 @@ function renderMine() {
 /* ============================================================
    帮助 · 说明 · 关于
    ============================================================ */
-const APP_VERSION = '1.1.1';
+const APP_VERSION = '1.1.2';
 const APP_BUILD = '2026-11-12';
 
 let helpTab = 'faq';                       // faq | guide | about
@@ -3306,6 +3306,7 @@ const GUIDE_STEPS = [
 ];
 
 const CHANGELOG = [
+  { v: '1.1.2', d: '2026-11-13', items: ['修好局域网直传：之前一直识别不到手机的原生能力，同步页只显示「网页版」', '现在能正常显示配对码、查找另一台手机、输码就能传'] },
   { v: '1.1.1', d: '2026-11-13', items: ['同步页的提示说准了：能分清是安装包旧了还是网络不通', '安装包落后时会直接给「更新安装包」按钮，不用自己去翻', '修掉面板底部说明被按钮挡住一截的问题'] },
   { v: '1.1.0', d: '2026-11-13', items: ['多设备同步更稳了：修掉部分机型一直扫不到对方的毛病，配对时页面不再卡住', '启动时自动体检数据，发现异常当场修正并告诉你改了什么', '课表、金额、作息这些算得不对的老问题，多半是历史数据坏了，现在会被兜住', '同步包和导入的文件若来自别的版本，也只修不丢'] },
   { v: '1.0.23', d: '2026-11-13', items: ['课表可以直接从 .xlsx 导入，不用再另存为 CSV', 'Excel 里的日期列会自动认出来；表头上方有标题行也没关系', '老式 .xls 仍不支持，会提示另存为 .xlsx 或 CSV'] },
@@ -5730,7 +5731,7 @@ let lastSyncStats = null;
  */
 let __niCache = null, __niOwner = null;
 function nativeInfo() {
-  const n = window.Native;
+  const n = NATIVE;
   if (__niCache && __niOwner === n) return __niCache;
 
   let out = { native: false, version: '', lan: false, missing: [] };
@@ -5883,7 +5884,7 @@ function lanParse(raw, fallback) {
 
 function lanStart() {
   if (!hasLan()) { toast('这台设备没有局域网能力'); return; }
-  const r = lanParse(window.Native.lanStart(), { ok: false, msg: '启动失败' });
+  const r = lanParse(NATIVE.lanStart(), { ok: false, msg: '启动失败' });
   if (!r.ok) { toast(r.msg || '没能开启，检查是否连了 WiFi'); return; }
   lanInfo.on = true;
   window.__lanOn = true;
@@ -5893,7 +5894,7 @@ function lanStart() {
   lanInfo.scanning = false;
   lanPeers = [];
   // 把当前数据交给原生缓存，对方来取就能直接拿到
-  window.Native.lanPublish(JSON.stringify(buildSyncPacket()));
+  NATIVE.lanPublish(JSON.stringify(buildSyncPacket()));
   refreshSyncSheet();
   startLanPoll();
   toast('已开启接收', 'check');
@@ -5901,7 +5902,7 @@ function lanStart() {
 
 function lanStop() {
   window.__lanOn = false;
-  if (hasLan()) window.Native.lanStop();
+  if (hasLan()) NATIVE.lanStop();
   lanInfo = { on: false, ip: '', port: 0, code: '', scanning: false };
   lanPeers = [];
   stopLanPoll();
@@ -5910,7 +5911,7 @@ function lanStop() {
 
 function lanScan() {
   if (!hasLan() || !lanInfo.on) return;
-  const r = lanParse(window.Native.lanScanStart(2600), null);
+  const r = lanParse(NATIVE.lanScanStart(2600), null);
   if (!r || !r.ok) { toast((r && r.msg) || '没能开始查找'); return; }
 
   lanInfo.scanning = true;
@@ -5920,7 +5921,7 @@ function lanScan() {
 
   const step = () => {
     if (!sheetOpen() || !$('#sync-device')) { lanInfo.scanning = false; return; }
-    const st = lanParse(window.Native.lanScanResult(), null) || {};
+    const st = lanParse(NATIVE.lanScanResult(), null) || {};
     const list = (st.peers || []).filter(p => p && p.ip && p.ip !== lanInfo.ip);
     const sig = JSON.stringify(list);
     if (sig !== lastSig) {
@@ -5971,7 +5972,7 @@ function lanGo() {
   if (!/^\d{4}$/.test(code)) { toast('配对码是 4 位数字'); return; }
 
   const started = lanParse(
-    window.Native.lanSyncStart(t.ip, t.port, code, JSON.stringify(buildSyncPacket())), null);
+    NATIVE.lanSyncStart(t.ip, t.port, code, JSON.stringify(buildSyncPacket())), null);
   if (!started || !started.ok) {
     toast((started && started.msg) || '没能开始同步');
     return;
@@ -5981,7 +5982,7 @@ function lanGo() {
 
   const t0 = Date.now();
   const step = () => {
-    const st = lanParse(window.Native.lanSyncPoll(), null) || {};
+    const st = lanParse(NATIVE.lanSyncPoll(), null) || {};
     if (st.state !== 'done') {
       if (Date.now() - t0 > 30000) { toast('同步超时，检查两台是否在同一个 WiFi'); return; }
       setTimeout(step, 300);
@@ -6010,7 +6011,7 @@ function lanGo() {
 /** 对方推过来的包，轮询取回来合并 */
 function lanDrainInbox() {
   if (!hasLan() || !lanInfo.on) return;
-  const r = lanParse(window.Native.lanInbox(), { items: [] });
+  const r = lanParse(NATIVE.lanInbox(), { items: [] });
   const items = Array.isArray(r.items) ? r.items : [];
   if (!items.length) return;
   let total = null;
@@ -6682,8 +6683,7 @@ function deviceInfo() {
   if (!meta.deviceId) meta.deviceId = 'd' + Math.random().toString(36).slice(2, 10);
   let model = '';
   try {
-    const n = window.Native;
-    if (n && typeof n.deviceName === 'function') model = String(n.deviceName() || '');
+    if (NATIVE && typeof NATIVE.deviceName === 'function') model = String(NATIVE.deviceName() || '');
   } catch (e) { model = ''; }
   if (!model && typeof navigator !== 'undefined' && navigator.userAgent) {
     const m = /Android[^;]*;\s*([^)]+)\)/.exec(navigator.userAgent);

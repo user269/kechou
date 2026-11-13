@@ -1,5 +1,5 @@
 /* 课酬 PWA Service Worker —— 网络优先，离线回退缓存 */
-const CACHE = 'kerchou-v29';
+const CACHE = 'kerchou-v30';
 const ASSETS = [
   './',
   './index.html',
