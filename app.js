@@ -2922,7 +2922,7 @@ function renderMine() {
 /* ============================================================
    帮助 · 说明 · 关于
    ============================================================ */
-const APP_VERSION = '1.0.22';
+const APP_VERSION = '1.0.23';
 const APP_BUILD = '2026-11-12';
 
 let helpTab = 'faq';                       // faq | guide | about
@@ -3004,6 +3004,11 @@ const FAQ_GROUPS = [
         q: '怎么把课表发给同事，或换到另一台手机？',
         a: `我的 →「导入导出课表」，导出得到一段纯文本（一行一节，含单双周和 +20分 延长）。对方粘贴进去导入即可，还能勾选「同时铺到本学期」。`,
         go: { act: 'io', text: '打开导入导出' },
+      },
+      {
+        q: '能把 Excel 课表直接导入吗？',
+        a: `可以。我的 →「导入导出课表」→ 导入，点<b>读 Excel / CSV</b> 选 <b>.xlsx</b> 文件，读第一张工作表。<br>表格里的表头（日期 / 节次 / 班级 / 类型）会自动跳过；日期列如果是 Excel 日期格式，会转成 2026-11-16 这种写法。<br>老式 <b>.xls</b> 读不了，在 Excel 里「另存为」成 .xlsx 或 CSV 就行。`,
+        go: { act: 'io', text: '去导入课表' },
       },
     ],
   },
@@ -3101,6 +3106,7 @@ const GUIDE_STEPS = [
 ];
 
 const CHANGELOG = [
+  { v: '1.0.23', d: '2026-11-13', items: ['课表可以直接从 .xlsx 导入，不用再另存为 CSV', 'Excel 里的日期列会自动认出来；表头上方有标题行也没关系', '老式 .xls 仍不支持，会提示另存为 .xlsx 或 CSV'] },
   { v: '1.0.22', d: '2026-11-13', items: ['计费方案可以存多套，换学校、换算法一键切回', '方案能生成一段分享码发给同事，对方粘贴即用', '课时费页新增「学期总览」：整个学期的总额、按月分布、类型占比', '批量导入课表支持直接读 CSV 文件；帮助里补了「口径」问答'] },
   { v: '1.0.21', d: '2026-11-12', items: ['作息模板改为优先走实时线路，更新后不再被 CDN 缓存拖住'] },
   { v: '1.0.20', d: '2026-11-12', items: ['新增「补贴与扣款」：班主任津贴、监考费、代课费、缺勤扣款都能记账，一起算进月度总额', '可设「每月固定」或「只这一次」，一次性款项不会跟着月份重复', '月报和导出的表格里也会带上这些条目', '作息模板可以联网更新，以后新增学段或地区作息不用等新版本'] },
@@ -4247,8 +4253,11 @@ function parseImportText(text) {
   const lines = text.split(/\r?\n/).map(s => s.trim()).filter(Boolean).filter(s => !s.startsWith('#'));
   const rows = [], errors = [];
   lines.forEach((line, idx) => {
-    // 跳过表头
-    if (idx === 0 && /日期|星期|节次|班级|课程|时间/.test(line) && !/\d{1,2}[:：]\d{2}/.test(line) && !/\d{1,2}[-/月]\d{1,2}/.test(line)) return;
+    // 跳过表头：Excel 里表头不一定在第一行（上面常有「2026 秋季课表」这种标题），
+    // 所以按内容判断而不是按行号——含表头词又没有日期/时间的行直接忽略。
+    if (/日期|星期|节次|班级|课程|时间/.test(line)
+      && !/\d{1,2}[:：]\d{2}/.test(line)
+      && !/\d{1,2}[-/月]\d{1,2}/.test(line)) return;
 
     const cells = splitCells(line).filter(c => c !== '');
     let date = null, period = null, typeId = null, klass = '', timeHit = null, noteParts = [], weekMode = null;
@@ -4268,7 +4277,13 @@ function parseImportText(text) {
     });
 
     if (!klass && noteParts.length) klass = noteParts.shift();
-    if (!date) { errors.push(line); return; }
+    if (!date) {
+      // 表头上方常有一行「2026 秋季课表」这类标题：没有任何日期/节次/类型信息，
+      // 且出现在第一节课之前，就当标题忽略；其余仍按错误报出来。
+      if (!rows.length && period === null && !typeId) return;
+      errors.push(line);
+      return;
+    }
 
     // 单双周与日期不一致时，挪到最近的同星期几
     let aligned = false;
@@ -4315,11 +4330,11 @@ function openImportSheet() {
         <div>每行一节课，用<b>空格 / 逗号 / 制表符</b>分隔。支持 <b>2026-11-09</b>、<b>11-09</b>、<b>周一</b>；节次写 <b>第3节</b>、<b>3</b> 或 <b>08:45</b>；类型写 正课 / 自习 / 早读 / 晚自习 / 辅导，不写默认正课；周次写 <b>单周</b> / <b>双周</b>，不写默认每周。</div>
       </div>
       <div class="field">
-        <div class="field-label">粘贴内容 <span class="hint">可从 Excel 直接复制</span></div>
+        <div class="field-label">粘贴内容 <span class="hint">也可点「读文件」直接选 .xlsx / .csv</span></div>
         <textarea class="input" id="impText" rows="9" placeholder="${esc(sample)}"></textarea>
       </div>
       <div class="hstack" style="gap:8px;flex-wrap:wrap">
-        <button class="btn ghost sm" data-act="imp-file">${ic('upload', 14)} 读文件</button>
+        <button class="btn ghost sm" data-act="imp-file">${ic('upload', 14)} 读 Excel / CSV</button>
         <button class="btn outline sm" data-act="imp-sample">填入示例</button>
         <button class="btn ghost sm" data-act="imp-clear">清空</button>
       </div>
@@ -6217,14 +6232,11 @@ function isExcelBinary(name) {
 function pickScheduleFile() {
   const input = document.createElement('input');
   input.type = 'file';
-  input.accept = 'text/plain,.txt,.csv,.tsv,.md,text/*';
+  input.accept = 'text/plain,.txt,.csv,.tsv,.md,.xlsx,text/*';
   input.onchange = () => {
     const file = input.files && input.files[0];
     if (!file) return;
-    if (isExcelBinary(file.name)) {
-      toast('Excel 文件请另存为 CSV，或直接复制单元格粘贴');
-      return;
-    }
+    if (isExcelBinary(file.name)) { readXlsxInto(file, 'text'); return; }
     const reader = new FileReader();
     reader.onload = () => {
       ieText = normalizeCsvText(reader.result);
@@ -6238,18 +6250,406 @@ function pickScheduleFile() {
   input.click();
 }
 
+/* ============================================================
+   xlsx 解析（零依赖）
+   ----------
+   .xlsx 本质是一个 zip，里面放 XML。浏览器没有现成的解压能力，
+   这里自己实现：raw inflate → 读 zip 目录 → 用 DOMParser 读 SpreadsheetML。
+   只取「第一张工作表 + 共享字符串 + 单元格格式（判断是不是日期）」，够课表导入用。
+   ============================================================ */
+
+/* ---- 1. raw deflate 解压（puff 算法的紧凑实现） ---- */
+const LEN_BASE = [3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258];
+const LEN_EXTRA = [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0];
+const DIST_BASE = [1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577];
+const DIST_EXTRA = [0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13];
+const CLEN_ORDER = [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15];
+
+function buildHuffman(lengths) {
+  const count = new Array(16).fill(0);
+  for (let i = 0; i < lengths.length; i++) count[lengths[i]]++;
+  count[0] = 0;
+  const offs = new Array(16).fill(0);
+  for (let i = 1; i < 16; i++) offs[i] = offs[i - 1] + count[i - 1];
+  const symbol = new Array(lengths.length).fill(0);
+  for (let i = 0; i < lengths.length; i++) {
+    if (lengths[i]) symbol[offs[lengths[i]]++] = i;
+  }
+  return { count, symbol };
+}
+
+function inflateRaw(input) {
+  const src = input instanceof Uint8Array ? input : new Uint8Array(input);
+  let pos = 0, bitBuf = 0, bitCnt = 0;
+  let out = new Uint8Array(Math.max(1024, src.length * 4));
+  let outLen = 0;
+
+  const room = n => {
+    if (outLen + n <= out.length) return;
+    let size = out.length || 1024;
+    while (size < outLen + n) size *= 2;
+    const next = new Uint8Array(size);
+    next.set(out.subarray(0, outLen));
+    out = next;
+  };
+  const bits = n => {
+    while (bitCnt < n) {
+      if (pos >= src.length) throw new Error('压缩数据不完整');
+      bitBuf |= src[pos++] << bitCnt;
+      bitCnt += 8;
+    }
+    const v = bitBuf & ((1 << n) - 1);
+    bitBuf >>>= n;
+    bitCnt -= n;
+    return v;
+  };
+  const decode = h => {
+    let code = 0, first = 0, index = 0;
+    for (let len = 1; len <= 15; len++) {
+      code |= bits(1);
+      const cnt = h.count[len];
+      if (code - first < cnt) return h.symbol[index + (code - first)];
+      index += cnt;
+      first = (first + cnt) << 1;
+      code <<= 1;
+    }
+    throw new Error('压缩数据损坏');
+  };
+
+  let fixedLit = null, fixedDist = null;
+  for (;;) {
+    const last = bits(1);
+    const type = bits(2);
+    if (type === 0) {
+      bitBuf = 0; bitCnt = 0;                       // 对齐到字节
+      if (pos + 4 > src.length) throw new Error('压缩数据不完整');
+      const len = src[pos] | (src[pos + 1] << 8);
+      pos += 4;                                     // 跳过 LEN 与 NLEN
+      if (pos + len > src.length) throw new Error('压缩数据不完整');
+      room(len);
+      out.set(src.subarray(pos, pos + len), outLen);
+      outLen += len;
+      pos += len;
+    } else if (type === 1 || type === 2) {
+      let lit, dist;
+      if (type === 1) {
+        if (!fixedLit) {
+          const l = new Array(288);
+          for (let i = 0; i < 144; i++) l[i] = 8;
+          for (let i = 144; i < 256; i++) l[i] = 9;
+          for (let i = 256; i < 280; i++) l[i] = 7;
+          for (let i = 280; i < 288; i++) l[i] = 8;
+          fixedLit = buildHuffman(l);
+          fixedDist = buildHuffman(new Array(30).fill(5));
+        }
+        lit = fixedLit; dist = fixedDist;
+      } else {
+        const hlit = bits(5) + 257;
+        const hdist = bits(5) + 1;
+        const hclen = bits(4) + 4;
+        const clens = new Array(19).fill(0);
+        for (let i = 0; i < hclen; i++) clens[CLEN_ORDER[i]] = bits(3);
+        const clh = buildHuffman(clens);
+        const lengths = new Array(hlit + hdist).fill(0);
+        let i = 0;
+        while (i < hlit + hdist) {
+          const sym = decode(clh);
+          if (sym < 16) { lengths[i++] = sym; continue; }
+          let rep = 0, val = 0;
+          if (sym === 16) {
+            if (i === 0) throw new Error('压缩数据损坏');
+            val = lengths[i - 1];
+            rep = 3 + bits(2);
+          } else if (sym === 17) {
+            rep = 3 + bits(3);
+          } else {
+            rep = 11 + bits(7);
+          }
+          while (rep-- > 0 && i < lengths.length) lengths[i++] = val;
+        }
+        lit = buildHuffman(lengths.slice(0, hlit));
+        dist = buildHuffman(lengths.slice(hlit));
+      }
+
+      for (;;) {
+        const sym = decode(lit);
+        if (sym < 256) {
+          room(1);
+          out[outLen++] = sym;
+          continue;
+        }
+        if (sym === 256) break;
+        const li = sym - 257;
+        if (li >= LEN_BASE.length) throw new Error('压缩数据损坏');
+        const len = LEN_BASE[li] + bits(LEN_EXTRA[li]);
+        const di = decode(dist);
+        if (di >= DIST_BASE.length) throw new Error('压缩数据损坏');
+        const back = DIST_BASE[di] + bits(DIST_EXTRA[di]);
+        if (back > outLen) throw new Error('压缩数据损坏');
+        room(len);
+        for (let k = 0; k < len; k++, outLen++) out[outLen] = out[outLen - back];
+      }
+    } else {
+      throw new Error('压缩数据损坏');
+    }
+    if (last) break;
+  }
+  return out.slice(0, outLen);
+}
+
+/* ---- 2. 读 zip 目录 ---- */
+function openZip(buffer) {
+  // 同时接受 ArrayBuffer 与 Uint8Array：FileReader 给的是前者，测试里常传后者
+  const u8 = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+  const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+  let eocd = -1;
+  const floor = Math.max(0, u8.length - 65558);
+  for (let i = u8.length - 22; i >= floor; i--) {
+    if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+  }
+  if (eocd < 0) throw new Error('不是有效的 Excel 文件');
+
+  const count = dv.getUint16(eocd + 10, true);
+  let p = dv.getUint32(eocd + 16, true);
+  const entries = new Map();
+  const dec = new TextDecoder('utf-8');
+  for (let i = 0; i < count; i++) {
+    if (p + 46 > u8.length || dv.getUint32(p, true) !== 0x02014b50) break;
+    const method = dv.getUint16(p + 10, true);
+    const compSize = dv.getUint32(p + 20, true);
+    const size = dv.getUint32(p + 24, true);
+    const nameLen = dv.getUint16(p + 28, true);
+    const extraLen = dv.getUint16(p + 30, true);
+    const cmtLen = dv.getUint16(p + 32, true);
+    const off = dv.getUint32(p + 42, true);
+    const name = dec.decode(u8.subarray(p + 46, p + 46 + nameLen));
+    entries.set(name, { method, compSize, size, off });
+    p += 46 + nameLen + extraLen + cmtLen;
+  }
+  if (!entries.size) throw new Error('Excel 文件是空的');
+
+  return {
+    names: [...entries.keys()],
+    has: n => entries.has(n),
+    read(n) {
+      const e = entries.get(n);
+      if (!e) return null;
+      if (e.size === 0xffffffff || e.off === 0xffffffff) throw new Error('Excel 文件太大，换个小的试试');
+      const lnameLen = dv.getUint16(e.off + 26, true);
+      const lextraLen = dv.getUint16(e.off + 28, true);
+      const start = e.off + 30 + lnameLen + lextraLen;
+      const raw = u8.subarray(start, start + e.compSize);
+      if (e.method === 0) return raw;
+      if (e.method !== 8) throw new Error('这个 Excel 用了不支持的压缩方式');
+      return inflateRaw(raw);
+    },
+  };
+}
+
+/* ---- 3. 读 SpreadsheetML ---- */
+const xlsxText = bytes => (bytes ? new TextDecoder('utf-8').decode(bytes) : '');
+const xmlDoc = str => new DOMParser().parseFromString(str, 'application/xml');
+
+function relIdOf(el) {
+  if (!el || !el.attributes) return '';
+  for (let i = 0; i < el.attributes.length; i++) {
+    const a = el.attributes[i];
+    if (a.localName === 'id' && /relationships/.test(a.namespaceURI || '')) return a.value;
+  }
+  return el.getAttribute('r:id') || '';
+}
+
+function colIndexOf(ref) {
+  const m = /^([A-Z]+)/i.exec(String(ref || ''));
+  if (!m) return -1;
+  let n = 0;
+  for (const ch of m[1].toUpperCase()) n = n * 26 + (ch.charCodeAt(0) - 64);
+  return n - 1;
+}
+
+function parseSharedStrings(xml) {
+  if (!xml) return [];
+  const doc = xmlDoc(xml);
+  const out = [];
+  const si = doc.getElementsByTagName('si');
+  for (let i = 0; i < si.length; i++) {
+    const ts = si[i].getElementsByTagName('t');
+    let s = '';
+    for (let j = 0; j < ts.length; j++) s += ts[j].textContent;
+    out.push(s);
+  }
+  return out;
+}
+
+/** 哪些单元格样式是日期（内置格式 14–22、45–47 与自定义 y/m/d 格式） */
+function parseDateStyles(xml) {
+  const set = new Set();
+  if (!xml) return set;
+  const doc = xmlDoc(xml);
+  const custom = new Map();
+  const fmts = doc.getElementsByTagName('numFmt');
+  for (let i = 0; i < fmts.length; i++) {
+    const id = Number(fmts[i].getAttribute('numFmtId'));
+    const code = fmts[i].getAttribute('formatCode') || '';
+    if (/[yYdD]/.test(code) || /m{2,}/.test(code) || /h{1,2}:/.test(code)) custom.set(id, true);
+  }
+  const builtinDate = id => (id >= 14 && id <= 22) || (id >= 45 && id <= 47)
+    || id === 27 || id === 30 || id === 36 || id === 50 || id === 57;
+  const xfs = doc.getElementsByTagName('xf');
+  let idx = 0;
+  for (let i = 0; i < xfs.length; i++) {
+    const xf = xfs[i];
+    const parent = xf.parentNode;
+    if (!parent || String(parent.nodeName) !== 'cellXfs') continue;
+    const id = Number(xf.getAttribute('numFmtId') || 0);
+    if (builtinDate(id) || custom.has(id)) set.add(idx);
+    idx++;
+  }
+  return set;
+}
+
+/** Excel 序列号 → YYYY-MM-DD（1900 年起算，含那个著名闰年 bug 的偏移） */
+function serialToYmd(n) {
+  const ms = Math.round((n - 25569) * 86400000);
+  const d = new Date(ms);
+  if (Number.isNaN(d.getTime())) return String(n);
+  const p = v => String(v).padStart(2, '0');
+  return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}`;
+}
+
+function parseSheetRows(xml, shared, dateXfs) {
+  const doc = xmlDoc(xml);
+  const rows = [];
+  const rowEls = doc.getElementsByTagName('row');
+  for (let i = 0; i < rowEls.length; i++) {
+    const cells = [];
+    const cEls = rowEls[i].getElementsByTagName('c');
+    for (let j = 0; j < cEls.length; j++) {
+      const c = cEls[j];
+      const idx = colIndexOf(c.getAttribute('r'));
+      if (idx < 0) continue;
+      const t = c.getAttribute('t') || 'n';
+      const style = Number(c.getAttribute('s'));
+      let val = '';
+
+      if (t === 'inlineStr') {
+        const ts = c.getElementsByTagName('t');
+        for (let k = 0; k < ts.length; k++) val += ts[k].textContent;
+      } else {
+        const v = c.getElementsByTagName('v')[0];
+        const raw = v ? v.textContent : '';
+        if (t === 's') val = shared[Number(raw)] || '';
+        else if (t === 'b') val = raw === '1' ? '是' : '否';
+        else if (t === 'e') val = '';
+        else if (raw !== '' && dateXfs.has(style) && /^\d+(\.\d+)?$/.test(raw)) val = serialToYmd(Number(raw));
+        else val = raw;
+      }
+      cells[idx] = String(val).replace(/\s+/g, ' ').trim();
+    }
+    for (let k = 0; k < cells.length; k++) if (cells[k] == null) cells[k] = '';
+    if (cells.some(x => x !== '')) rows.push(cells);
+  }
+  return rows;
+}
+
+/** 找到第一张工作表的 XML 路径：走 workbook.xml 的 r:id → rels 里的 Target */
+function firstSheetPath(zip) {
+  let target = '';
+  const wb = zip.read('xl/workbook.xml');
+  if (wb) {
+    const doc = xmlDoc(xlsxText(wb));
+    const sheet = doc.getElementsByTagName('sheet')[0];
+    const rid = relIdOf(sheet);
+    if (rid) {
+      const rels = zip.read('xl/_rels/workbook.xml.rels');
+      if (rels) {
+        const rdoc = xmlDoc(xlsxText(rels));
+        const list = rdoc.getElementsByTagName('Relationship');
+        for (let i = 0; i < list.length; i++) {
+          if (list[i].getAttribute('Id') === rid) {
+            target = list[i].getAttribute('Target') || '';
+            break;
+          }
+        }
+      }
+    }
+  }
+  if (!target) {
+    const guess = zip.names.find(n => /^xl\/worksheets\/sheet\d+\.xml$/.test(n));
+    return guess || 'xl/worksheets/sheet1.xml';
+  }
+  target = target.replace(/\\/g, '/');
+  if (target.startsWith('/')) return target.slice(1);
+  if (target.startsWith('xl/')) return target;
+  return 'xl/' + target;
+}
+
+/** xlsx 二进制 → 二维数组（第一张表） */
+function xlsxToRows(buffer) {
+  const zip = openZip(buffer);
+  const sheetPath = firstSheetPath(zip);
+  const sheet = zip.read(sheetPath);
+  if (!sheet) throw new Error('这个 Excel 里没找到工作表');
+  const shared = parseSharedStrings(xlsxText(zip.read('xl/sharedStrings.xml')));
+  const dateXfs = parseDateStyles(xlsxText(zip.read('xl/styles.xml')));
+  return parseSheetRows(xlsxText(sheet), shared, dateXfs);
+}
+
+/** xlsx 二进制 → 制表符分隔的文本，交给现有的行解析器 */
+function xlsxToText(buffer) {
+  const rows = xlsxToRows(buffer);
+  if (!rows.length) throw new Error('工作表里没有内容');
+  return rows.map(r => r.join('\t')).join('\n');
+}
+
+/**
+ * 读 .xlsx：解出第一张表 → 制表符文本 → 交给对应文本框。
+ * target='import' 走批量导入（支持日期/单双周），'text' 走课表文本导入。
+ */
+function readXlsxInto(file, target) {
+  if (!/\.xlsx$/i.test(file.name)) {
+    toast('老式 .xls 读不了，请在 Excel 里另存为 .xlsx 或 CSV');
+    return;
+  }
+  if (file.size > 20 * 1024 * 1024) {
+    toast('文件超过 20MB，请只保留课表那一张表');
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => {
+    let text = '';
+    try {
+      text = xlsxToText(reader.result);
+    } catch (e) {
+      toast(e && e.message ? e.message : '这个 Excel 打不开');
+      return;
+    }
+    if (target === 'import') {
+      const ta = $('#impText');
+      if (!ta) return;
+      ta.value = text;
+      draftImport = null;
+      if ($('#impBtn')) $('#impBtn').click();
+    } else {
+      ieText = text;
+      ieTab = 'import';
+      renderScheduleIO();
+    }
+    toast(`已读入 ${file.name}，确认后点导入`, 'check');
+  };
+  reader.onerror = () => toast('文件读取失败');
+  reader.readAsArrayBuffer(file);
+}
+
 /** 批量导入面板里读文件：读进来直接填到文本框并解析 */
 function pickImportFile() {
   const input = document.createElement('input');
   input.type = 'file';
-  input.accept = 'text/plain,.txt,.csv,.tsv,.md,text/*';
+  input.accept = 'text/plain,.txt,.csv,.tsv,.md,.xlsx,text/*';
   input.onchange = () => {
     const file = input.files && input.files[0];
     if (!file) return;
-    if (isExcelBinary(file.name)) {
-      toast('Excel 请另存为 CSV，或直接复制单元格粘贴');
-      return;
-    }
+    if (isExcelBinary(file.name)) { readXlsxInto(file, 'import'); return; }
     const reader = new FileReader();
     reader.onload = () => {
       const ta = $('#impText');

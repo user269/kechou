@@ -1,19 +1,18 @@
 {
-  "versionCode": 23,
-  "versionName": "1.0.22",
+  "versionCode": 24,
+  "versionName": "1.0.23",
   "notes": [
-    "计费方案可存多套，换学校 / 换算法一键切回",
-    "方案能生成分享码发给同事，对方粘贴即用",
-    "新增「学期总览」：整学期的总额、按月分布、类型占比",
-    "批量导入课表可直接读 CSV 文件；帮助补充「口径」问答"
+    "课表可直接从 .xlsx 导入，不用先另存为 CSV",
+    "Excel 的日期列自动识别；表头上方有标题行也能读",
+    "老式 .xls 会提示另存为 .xlsx 或 CSV"
   ],
   "apk": {
-    "url": "https://github.com/user269/kechou/releases/download/v1.0.22/kebao-1.0.22.apk",
-    "size": 386295,
+    "url": "https://github.com/user269/kechou/releases/download/v1.0.23/kebao-1.0.23.apk",
+    "size": 390391,
     "mirrors": [
-      "https://ghfast.top/https://github.com/user269/kechou/releases/download/v1.0.22/kebao-1.0.22.apk",
-      "https://gh-proxy.com/https://github.com/user269/kechou/releases/download/v1.0.22/kebao-1.0.22.apk",
-      "https://ghproxy.net/https://github.com/user269/kechou/releases/download/v1.0.22/kebao-1.0.22.apk"
+      "https://ghfast.top/https://github.com/user269/kechou/releases/download/v1.0.23/kebao-1.0.23.apk",
+      "https://gh-proxy.com/https://github.com/user269/kechou/releases/download/v1.0.23/kebao-1.0.23.apk",
+      "https://ghproxy.net/https://github.com/user269/kechou/releases/download/v1.0.23/kebao-1.0.23.apk"
     ]
   },
   "web": {
@@ -22,5 +21,5 @@
     "size": 0,
     "notes": []
   },
-  "updated": "2026-11-13T00:20:46Z"
+  "updated": "2026-11-13T00:35:13Z"
 }
