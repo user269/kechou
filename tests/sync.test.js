@@ -33,7 +33,7 @@ window.__api = {
   set state(v) { state = v; },
   save, trackChanges, collectEntities, stableKey, shortHash,
   buildSyncPacket, parseSyncPacket, mergeSyncPacket, deviceInfo, setDeviceName, pruneSyncMeta,
-  openSyncSheet, lanStart, lanStop, lanScan, lanSyncTo, lanDrainInbox, hasLan, syncMineSub,
+  openSyncSheet, lanStart, lanStop, lanScan, lanAskCode, lanGo, lanDrainInbox, hasLan, syncMineSub,
   get lanInfo() { return lanInfo; },
   get lanPeers() { return lanPeers; },
   now() { return Date.now(); },
@@ -231,7 +231,7 @@ const wl = boot();
 const L = wl.__api;
 let published = null, scanned = 0;
 wl.Native = {
-  lanStart: () => JSON.stringify({ ok: true, ip: '192.168.1.23', port: 8801 }),
+  lanStart: () => JSON.stringify({ ok: true, ip: '192.168.1.23', port: 8801, code: '3847' }),
   lanStop: () => { },
   lanPublish: j => { published = j; },
   lanScan: () => JSON.stringify({ ok: true, peers: [
@@ -253,8 +253,13 @@ L.lanScan();
 ok(L.lanPeers.length === 1, '扫到 1 台（自己已被过滤）', L.lanPeers.map(p => p.name));
 ok(L.lanPeers[0].ip === '192.168.1.57', '留下的是对方', L.lanPeers[0]);
 
+ok(L.lanInfo.code === '3847', '拿到配对码', L.lanInfo.code);
+
 const beforeLessons = L.state.lessons.length;
-L.lanSyncTo({ dataset: { ip: '192.168.1.57', port: '8801', name: 'Xiaomi 14' } });
+L.lanAskCode({ dataset: { ip: '192.168.1.57', port: '8801', name: 'Xiaomi 14' } });
+ok(!!wl.document.querySelector('#lan-code'), '点设备会先要配对码');
+wl.document.querySelector('#lan-code').value = '3847';
+L.lanGo();
 ok(L.state.lessons.length >= beforeLessons, '同步后课程没有减少', [beforeLessons, L.state.lessons.length]);
 ok(L.state.meta.syncPeer === 'Xiaomi 14' || L.state.meta.syncPeer === fromName(A), '记下了同步对象', L.state.meta.syncPeer);
 
@@ -298,8 +303,33 @@ L3.lanInfo.on = true;
 let threw = false;
 try { L3.lanScan(); } catch (e) { threw = true; }
 ok(!threw, '扫描返回垃圾也不抛异常');
-L3.lanSyncTo({ dataset: { ip: '1.2.3.4', port: '9', name: 'x' } });
-ok(true, '同步失败不抛异常');
+L3.lanAskCode({ dataset: { ip: '1.2.3.4', port: '9', name: 'x' } });
+const codeInput = wl3.document.querySelector('#lan-code');
+if (codeInput) codeInput.value = '1234';
+let threw2 = false;
+try { L3.lanGo(); } catch (e) { threw2 = true; }
+ok(!threw2, '同步失败不抛异常');
+
+console.log('\n【20】配对码不是 4 位数字就不放行');
+const wl4 = boot();
+const L4 = wl4.__api;
+let called = 0;
+wl4.Native = {
+  lanStart: () => JSON.stringify({ ok: true, ip: '192.168.1.23', port: 8801, code: '3847' }),
+  lanSync: () => { called++; return '{"ok":true}'; },
+  lanPublish: () => { },
+  lanInbox: () => '{"items":[]}',
+  deviceName: () => 'X',
+};
+L4.openSyncSheet();
+L4.lanAskCode({ dataset: { ip: '192.168.1.57', port: '8801', name: 'A' } });
+const inp = wl4.document.querySelector('#lan-code');
+inp.value = '12';
+L4.lanGo();
+ok(called === 0, '两位数字不发请求', called);
+inp.value = 'abcd';
+L4.lanGo();
+ok(called === 0, '非数字不发请求', called);
 
 console.log(`\n结果：${pass} 通过，${fail} 失败`);
 process.exit(fail ? 1 : 0);

@@ -521,6 +521,14 @@ public class MainActivity extends Activity {
     }
 
     @Override
+    protected void onStop() {
+        super.onStop();
+        // 退到后台就别再监听局域网了：否则同一个 WiFi 下的人一直能试配对码。
+        // 回到前台后用户在面板里重新点「开启接收」即可。
+        try { LanSync.stop(); } catch (Throwable ignored) { }
+    }
+
+    @Override
     protected void onDestroy() {
         if (backCallback != null && Build.VERSION.SDK_INT >= 33) {
             try {

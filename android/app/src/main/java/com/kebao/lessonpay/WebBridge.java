@@ -356,8 +356,8 @@ public class WebBridge {
     }
 
     @JavascriptInterface
-    public String lanSync(String ip, int port, String packet) {
-        return LanSync.sync(ip, port, packet);
+    public String lanSync(String ip, int port, String code, String packet) {
+        return LanSync.sync(ip, port, code, packet);
     }
 
     @JavascriptInterface

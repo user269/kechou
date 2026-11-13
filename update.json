@@ -1,19 +1,19 @@
 {
-  "versionCode": 25,
-  "versionName": "1.0.24",
+  "versionCode": 26,
+  "versionName": "1.0.25",
   "notes": [
     "新增「多设备同步」：同一个 WiFi 下两台手机直接对传，不经过任何服务器",
+    "连之前要输对方屏幕上的 4 位配对码，同一个 WiFi 的其他人连不上",
     "也可以导出同步包，用微信发过去再导入",
-    "同步是合并：两边各自加的课都留着，同一条记录以改得晚的为准",
-    "删掉的课也会同步删掉，不会因为另一台还留着就复活"
+    "同步是合并：两边各自加的课都留着，同一条记录以改得晚的为准"
   ],
   "apk": {
-    "url": "https://github.com/user269/kechou/releases/download/v1.0.24/kebao-1.0.24.apk",
-    "size": 406772,
+    "url": "https://github.com/user269/kechou/releases/download/v1.0.25/kebao-1.0.25.apk",
+    "size": 406775,
     "mirrors": [
-      "https://ghfast.top/https://github.com/user269/kechou/releases/download/v1.0.24/kebao-1.0.24.apk",
-      "https://gh-proxy.com/https://github.com/user269/kechou/releases/download/v1.0.24/kebao-1.0.24.apk",
-      "https://ghproxy.net/https://github.com/user269/kechou/releases/download/v1.0.24/kebao-1.0.24.apk"
+      "https://ghfast.top/https://github.com/user269/kechou/releases/download/v1.0.25/kebao-1.0.25.apk",
+      "https://gh-proxy.com/https://github.com/user269/kechou/releases/download/v1.0.25/kebao-1.0.25.apk",
+      "https://ghproxy.net/https://github.com/user269/kechou/releases/download/v1.0.25/kebao-1.0.25.apk"
     ]
   },
   "web": {
@@ -22,5 +22,5 @@
     "size": 0,
     "notes": []
   },
-  "updated": "2026-11-13T01:39:29Z"
+  "updated": "2026-11-13T01:44:59Z"
 }

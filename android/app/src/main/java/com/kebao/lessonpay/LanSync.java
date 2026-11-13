@@ -50,6 +50,8 @@ public final class LanSync {
 
     private static volatile int httpPort = 0;
     private static volatile String snapshot = "{}";
+    /** 配对码：对方必须知道这 4 位数字才能把数据拉走，光扫到 IP 没用 */
+    private static volatile String pairCode = "";
     private static volatile String localAddress = "";
 
     /** 对方推过来的包，等网页来取 */
@@ -83,7 +85,9 @@ public final class LanSync {
             udpThread.setDaemon(true);
             udpThread.start();
 
-            return "{\"ok\":true,\"ip\":\"" + esc(localAddress) + "\",\"port\":" + httpPort + "}";
+            pairCode = String.format(java.util.Locale.US, "%04d", 1000 + new java.util.Random().nextInt(9000));
+            return "{\"ok\":true,\"ip\":\"" + esc(localAddress) + "\",\"port\":" + httpPort
+                    + ",\"code\":\"" + pairCode + "\"}";
         } catch (Exception e) {
             stop();
             return "{\"ok\":false,\"msg\":\"" + esc("没能开启：" + describe(e)) + "\"}";
@@ -100,6 +104,7 @@ public final class LanSync {
         serverThread = null;
         udpThread = null;
         httpPort = 0;
+        pairCode = "";
         inbox.clear();
         peers.clear();
     }
@@ -154,6 +159,12 @@ public final class LanSync {
         }
 
         if ("GET".equals(method) && path.startsWith("/snapshot")) {
+            // 数据是工资，不能谁扫到 IP 就给。要求带上本机屏幕上显示的配对码
+            String given = queryParam(path, "code");
+            if (pairCode.isEmpty() || !pairCode.equals(given)) {
+                respond(s, 401, "{\"ok\":false,\"msg\":\"pair code required\"}");
+                return;
+            }
             respond(s, 200, snapshot);
             return;
         }
@@ -196,6 +207,22 @@ public final class LanSync {
         out.write(head.getBytes(StandardCharsets.UTF_8));
         out.write(b);
         out.flush();
+    }
+
+    /** 从 "/snapshot?code=1234" 里取参数 */
+    private static String queryParam(String path, String key) {
+        int q = path.indexOf('?');
+        if (q < 0) return "";
+        String[] parts = path.substring(q + 1).split("&");
+        for (String p : parts) {
+            int e = p.indexOf('=');
+            if (e > 0 && p.substring(0, e).equals(key)) {
+                try {
+                    return java.net.URLDecoder.decode(p.substring(e + 1), "UTF-8");
+                } catch (Exception ignored) { return p.substring(e + 1); }
+            }
+        }
+        return "";
     }
 
     /** 按行读，但底层是字节流——用 BufferedReader 会把 body 一起吞进缓冲里 */
@@ -290,14 +317,17 @@ public final class LanSync {
      * 先拉对方的、再把自己的推过去。
      * 两边都合并一次，结果也就两边都齐了——不用第二次握手。
      */
-    static String sync(String ip, int port, String packet) {
+    static String sync(String ip, int port, String code, String packet) {
         if (ip == null || ip.trim().isEmpty() || port <= 0) {
             return "{\"ok\":false,\"msg\":\"" + esc("地址不对") + "\"}";
         }
+        if (code == null || code.trim().isEmpty()) {
+            return "{\"ok\":false,\"msg\":\"" + esc("先输入对方屏幕上显示的 4 位配对码") + "\"}";
+        }
         String base = "http://" + ip.trim() + ":" + port;
-        String pulled = request("GET", base + "/snapshot", null);
+        String pulled = request("GET", base + "/snapshot?code=" + code.trim(), null);
         if (pulled == null) {
-            return "{\"ok\":false,\"msg\":\"" + esc("连不上对方，确认两台在同一个 WiFi") + "\"}";
+            return "{\"ok\":false,\"msg\":\"" + esc("连不上，或者配对码不对") + "\"}";
         }
         String posted = request("POST", base + "/apply", packet);
         String body = (pulled.trim().isEmpty() || pulled.trim().equals("null")) ? "{}" : pulled.trim();

@@ -2945,7 +2945,7 @@ function renderMine() {
 /* ============================================================
    帮助 · 说明 · 关于
    ============================================================ */
-const APP_VERSION = '1.0.24';
+const APP_VERSION = '1.0.25';
 const APP_BUILD = '2026-11-12';
 
 let helpTab = 'faq';                       // faq | guide | about
@@ -3134,7 +3134,7 @@ const GUIDE_STEPS = [
 ];
 
 const CHANGELOG = [
-  { v: '1.0.24', d: '2026-11-13', items: ['新增「多设备同步」：同一个 WiFi 下两台手机直接对传，不经过任何服务器', '也可以导出同步包，用微信发过去再导入', '同步是合并：两边各自加的课都留着，同一条记录以改得晚的为准', '删掉的课也会同步删掉，不会因为另一台还留着就复活'] },
+  { v: '1.0.25', d: '2026-11-13', items: ['新增「多设备同步」：同一个 WiFi 下两台手机直接对传，不经过任何服务器', '连之前要输对方屏幕上的 4 位配对码，同一个 WiFi 的其他人连不上', '也可以导出同步包，用微信发过去再导入', '同步是合并：两边各自加的课都留着，同一条记录以改得晚的为准'] },
   { v: '1.0.23', d: '2026-11-13', items: ['课表可以直接从 .xlsx 导入，不用再另存为 CSV', 'Excel 里的日期列会自动认出来；表头上方有标题行也没关系', '老式 .xls 仍不支持，会提示另存为 .xlsx 或 CSV'] },
   { v: '1.0.22', d: '2026-11-13', items: ['计费方案可以存多套，换学校、换算法一键切回', '方案能生成一段分享码发给同事，对方粘贴即用', '课时费页新增「学期总览」：整个学期的总额、按月分布、类型占比', '批量导入课表支持直接读 CSV 文件；帮助里补了「口径」问答'] },
   { v: '1.0.21', d: '2026-11-12', items: ['作息模板改为优先走实时线路，更新后不再被 CDN 缓存拖住'] },
@@ -5543,7 +5543,7 @@ function openSwapLog() { openSwapCenter('log'); }
    ============================================================ */
 
 let lanPeers = [];
-let lanInfo = { on: false, ip: '', port: 0, scanning: false };
+let lanInfo = { on: false, ip: '', port: 0, code: '', scanning: false };
 let lanTimer = 0;
 let pendSyncPkt = null;
 let lastSyncStats = null;
@@ -5588,7 +5588,7 @@ function lanBodyHtml() {
   }
   const peers = lanPeers.length
     ? lanPeers.map((p, i) => `
-        <div class="row" data-act="lan-sync" data-ip="${esc(p.ip)}" data-port="${p.port}" data-name="${esc(p.name || '')}"
+        <div class="row" data-act="lan-ask" data-ip="${esc(p.ip)}" data-port="${p.port}" data-name="${esc(p.name || '')}"
              style="padding:12px 13px${i ? ';border-top:1px solid var(--line-2)' : ''}">
           <div class="ri" style="background:var(--mint-soft);color:var(--mint)">${ic('grid', 16)}</div>
           <div class="rc"><div class="t" style="font-size:14px">${esc(p.name || '另一台手机')}</div>
@@ -5601,8 +5601,9 @@ function lanBodyHtml() {
     <div class="rows" style="background:#F7F9FC;border-radius:14px">
       <div class="row" style="padding:12px 13px">
         <div class="ri" style="background:var(--brand-soft);color:var(--brand)">${ic('info', 16)}</div>
-        <div class="rc"><div class="t" style="font-size:14px">已开启接收</div>
-          <div class="s">${esc(lanInfo.ip || '没连上 WiFi')}${lanInfo.port ? ':' + lanInfo.port : ''}</div></div>
+        <div class="rc"><div class="t" style="font-size:14px">配对码</div>
+          <div class="s">另一台手机要输这 4 位数字才能连上</div></div>
+        <div class="rv num" style="font-size:20px;font-weight:700;letter-spacing:3px">${esc(lanInfo.code || '----')}</div>
       </div>
       ${peers}
       <div class="row" data-act="lan-scan" style="padding:12px 13px;border-top:1px solid var(--line-2)">
@@ -5677,6 +5678,7 @@ function lanStart() {
   window.__lanOn = true;
   lanInfo.ip = r.ip || '';
   lanInfo.port = r.port || 0;
+  lanInfo.code = r.code || '';
   lanInfo.scanning = false;
   lanPeers = [];
   // 把当前数据交给原生缓存，对方来取就能直接拿到
@@ -5689,7 +5691,7 @@ function lanStart() {
 function lanStop() {
   window.__lanOn = false;
   if (hasLan()) window.Native.lanStop();
-  lanInfo = { on: false, ip: '', port: 0, scanning: false };
+  lanInfo = { on: false, ip: '', port: 0, code: '', scanning: false };
   lanPeers = [];
   stopLanPoll();
   refreshSyncSheet();
@@ -5708,12 +5710,37 @@ function lanScan() {
   if (!lanPeers.length) toast('没找到另一台手机，两台都开到这个页面再试');
 }
 
-function lanSyncTo(el) {
-  const ip = el.dataset.ip, port = Number(el.dataset.port);
-  const name = el.dataset.name || '另一台手机';
-  if (!hasLan()) return;
-  toast('正在和 ' + name + ' 同步…');
-  const r = lanParse(window.Native.lanSync(ip, port, JSON.stringify(buildSyncPacket())), null);
+let lanTarget = null;
+
+/** 点某台设备后先要配对码：光扫到 IP 不该就能读走工资数据 */
+function lanAskCode(el) {
+  lanTarget = {
+    ip: el.dataset.ip,
+    port: Number(el.dataset.port),
+    name: el.dataset.name || '另一台手机',
+  };
+  openSheet({
+    title: '连接到 ' + lanTarget.name,
+    body: `
+      <div class="help-note" style="margin-top:0">在<b>对方手机上</b>看到 4 位配对码，输在这里。配对码只在开启接收期间有效。</div>
+      <div class="field">
+        <div class="field-label">配对码</div>
+        <input class="input" id="lan-code" inputmode="numeric" maxlength="4" placeholder="····"
+               style="letter-spacing:8px;font-size:22px;text-align:center;font-weight:700">
+      </div>`,
+    footer: `<button class="btn ghost" data-act="lan-back">返回</button>
+      <button class="btn" data-act="lan-go">开始同步</button>`,
+  });
+}
+
+function lanGo() {
+  const t = lanTarget;
+  if (!t || !hasLan()) return;
+  const code = (($('#lan-code') || {}).value || '').trim();
+  if (!/^\d{4}$/.test(code)) { toast('配对码是 4 位数字'); return; }
+  closeSheet();
+  toast('正在和 ' + t.name + ' 同步…');
+  const r = lanParse(window.Native.lanSync(t.ip, t.port, code, JSON.stringify(buildSyncPacket())), null);
   if (!r || !r.ok) {
     toast((r && r.msg) || '连不上，确认两台在同一个 WiFi');
     return;
@@ -5730,7 +5757,7 @@ function lanSyncTo(el) {
     }
   }
   lastSyncStats = stats;
-  openSyncResult(stats, name);
+  openSyncResult(stats, t.name);
 }
 
 /** 对方推过来的包，轮询取回来合并 */
@@ -7962,7 +7989,9 @@ document.addEventListener('click', e => {
     case 'lan-start': lanStart(); break;
     case 'lan-stop': lanStop(); break;
     case 'lan-scan': lanScan(); break;
-    case 'lan-sync': lanSyncTo(el); break;
+    case 'lan-ask': lanAskCode(el); break;
+    case 'lan-go': lanGo(); break;
+    case 'lan-back': lanTarget = null; openSyncSheet(); break;
 
     /* 月账单：复制文字 / 导出表格 */
     case 'stmt-copy': copyMonthStatement(); break;
