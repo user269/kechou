@@ -56,6 +56,10 @@ public class MainActivity extends Activity {
     private ValueCallback<Uri[]> fileCallback;
     private long lastBackAt = 0L;
     private OnBackInvokedCallback backCallback;
+    private AdHost adHost;
+    /** 系统栏/键盘占掉的底部高度，banner 出现时 WebView 要让出「这部分 + 广告高度」 */
+    private int lastInsetBottom = 0;
+    private int adHeight = 0;
     private FrameLayout rootView;
     private boolean pendingOpenUpdate = false;
 
@@ -98,6 +102,10 @@ public class MainActivity extends Activity {
             CrashLog.step(this, "WebView 创建失败：" + e);
             root.addView(errorView("网页组件没能启动", e));
         }
+        // 广告位容器：高度为 0 时完全不参与布局，对现有界面零影响
+        adHost = new AdHost(this);
+        root.addView(adHost.view());
+
         setContentView(root);
         CrashLog.step(this, web == null ? "WebView 不可用" : "WebView 已创建");
 
@@ -269,9 +277,11 @@ public class MainActivity extends Activity {
                     if (w == null) return insets;
                     Insets bars = insets.getInsets(WindowInsets.Type.systemBars());
                     Insets ime = insets.getInsets(WindowInsets.Type.ime());
-                    int bottom = Math.max(bars.bottom, ime.bottom);
+                    lastInsetBottom = Math.max(bars.bottom, ime.bottom);
+                    if (adHost != null) adHost.setInsetBottom(bars.bottom);
 
                     FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) w.getLayoutParams();
+                    int bottom = lastInsetBottom + adHeight;
                     if (lp.topMargin != bars.top || lp.bottomMargin != bottom) {
                         lp.topMargin = bars.top;
                         lp.bottomMargin = bottom;
@@ -518,6 +528,29 @@ public class MainActivity extends Activity {
             return;
         }
         if (web != null) web.reload();
+    }
+
+    AdHost adHost() {
+        return adHost;
+    }
+
+    /** 广告高度变化后，页面整体上移，banner 落在标签栏下方、系统导航栏之上 */
+    void onAdHeightChanged(int h) {
+        adHeight = h;
+        applyWebMargins();
+    }
+
+    private void applyWebMargins() {
+        WebView w = web;
+        if (w == null) return;
+        try {
+            FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) w.getLayoutParams();
+            int bottom = lastInsetBottom + adHeight;
+            if (lp.bottomMargin != bottom) {
+                lp.bottomMargin = bottom;
+                w.setLayoutParams(lp);
+            }
+        } catch (Throwable ignored) { }
     }
 
     @Override

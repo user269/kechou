@@ -377,6 +377,42 @@ public class WebBridge {
         return LanSync.inbox();
     }
 
+    /* ---------- 广告位：目前只有位置与让位，未接任何广告平台 ---------- */
+
+    private AdHost ad() {
+        return (act instanceof MainActivity) ? ((MainActivity) act).adHost() : null;
+    }
+
+    /** 广告能力现状：前端据此决定要不要占位、要不要提示 */
+    @JavascriptInterface
+    public String adInfo() {
+        AdHost h = ad();
+        boolean ready = h != null && h.sdkReady();
+        boolean preview = h != null && h.isPreview();
+        return "{\"ok\":true,\"ready\":" + ready + ",\"preview\":" + preview
+                + ",\"position\":\"" + (h == null ? "" : h.currentPosition()) + "\"}";
+    }
+
+    /** 请求展示 banner；没接 SDK 也没开预览时返回 false，界面什么都不用变 */
+    @JavascriptInterface
+    public boolean adShow(String position) {
+        AdHost h = ad();
+        return h != null && h.show(position);
+    }
+
+    @JavascriptInterface
+    public void adHide() {
+        AdHost h = ad();
+        if (h != null) h.hide();
+    }
+
+    /** 预览：没接 SDK 时用来确认版式和让位是否合适 */
+    @JavascriptInterface
+    public void adPreview(boolean on) {
+        AdHost h = ad();
+        if (h != null) h.setPreview(on);
+    }
+
     /** 机型名，同步时用来区分是哪台手机 */
     @JavascriptInterface
     public String deviceName() {

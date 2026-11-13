@@ -798,6 +798,13 @@ function defaultSettings() {
       cutAfter: 5,             // 上到第几节为止（含），之后的课平移到目标日
       includeNight: true,      // 晚自习是否一起平移
       autoSync: false,         // 调休后是否自动重建该周课表
+    // 广告位：默认关闭。没有接入任何广告平台之前，这些配置不起作用
+    ads: {
+      enabled: false,        // 总开关（远程可开）
+      positions: ['pay', 'mine'],   // 只放浏览型页面
+      delay: 1500,           // 进入页面后延迟多久再请求，别拖慢首屏
+    },
+    adPreview: false,        // 预览广告位（没接 SDK 时用来看版式）
     },
   };
 }
@@ -1551,6 +1558,87 @@ function fmtFullDate(d) {
   return `${d.getMonth() + 1}月${d.getDate()}日 ${WEEK_CN[d.getDay()]}`;
 }
 
+/* ============================================================
+   广告位
+   ------------------------------------------------------------
+   现在没有接入任何广告平台（需要账号、AppID、广告位 ID 和平台审核）。
+   这里先把「放哪里、什么时候出现、怎么让位」定下来：
+
+   - 只放在浏览型页面（课时费、我的）；课表页和录入表单一律不放，
+     那是用户真正在干活的地方，插广告等于赶人
+   - 进入页面后延迟出现，避免拖慢首屏
+   - 没接 SDK、也没开预览时，一次原生调用都不会发生
+   ============================================================ */
+
+const AD_FALLBACK_POS = ['pay', 'mine'];
+let adTimer = 0;
+
+function adCfg() {
+  const a = (state.settings && state.settings.ads) || {};
+  const pos = Array.isArray(a.positions) && a.positions.length ? a.positions : AD_FALLBACK_POS;
+  return {
+    enabled: !!a.enabled,
+    positions: pos,
+    delay: Number.isFinite(Number(a.delay)) ? Math.max(0, Number(a.delay)) : 1500,
+  };
+}
+
+function adAvailable() {
+  return !!(NATIVE && typeof NATIVE.adShow === 'function');
+}
+
+let __adReady = null;
+/** 是否已接入真实广告 SDK。没接的时候才需要「预览」这回事 */
+function adSdkReady() {
+  if (__adReady !== null) return __adReady;
+  if (!adAvailable() || typeof NATIVE.adInfo !== 'function') { __adReady = false; return false; }
+  try { __adReady = !!JSON.parse(String(NATIVE.adInfo())).ready; } catch (e) { __adReady = false; }
+  return __adReady;
+}
+
+/** 切到某个页面时调用：决定要不要、什么时候露出广告 */
+function adMaybeShow(tab) {
+  adHideNow();
+  if (!adAvailable()) return;
+  const c = adCfg();
+  const preview = !!(state.settings && state.settings.adPreview);
+  if (!c.enabled && !preview) return;
+  if (!c.positions.includes(tab)) return;
+
+  adTimer = setTimeout(() => {
+    adTimer = 0;
+    try { NATIVE.adShow(tab); } catch (e) { }
+  }, c.delay);
+}
+
+function adHideNow() {
+  if (adTimer) { clearTimeout(adTimer); adTimer = 0; }
+  if (adAvailable() && typeof NATIVE.adHide === 'function') {
+    try { NATIVE.adHide(); } catch (e) { }
+  }
+}
+
+/** 把预览开关同步给原生；重启后也要恢复 */
+function adSyncPreview() {
+  if (!adAvailable() || typeof NATIVE.adPreview !== 'function') return;
+  try { NATIVE.adPreview(!!(state.settings && state.settings.adPreview)); } catch (e) { }
+}
+
+function toggleAdPreview() {
+  if (!adAvailable()) { toast('这个安装包没有广告位能力'); return; }
+  state.settings.adPreview = !state.settings.adPreview;
+  save();
+  adSyncPreview();
+  render();
+  if (state.settings.adPreview) {
+    toast('已开启预览：切到「课时费」看效果', 'check');
+    adMaybeShow(currentTab);
+  } else {
+    adHideNow();
+    toast('已关闭预览');
+  }
+}
+
 function switchTab(tab) {
   currentTab = tab;
   $$('.tab').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
@@ -1558,6 +1646,7 @@ function switchTab(tab) {
   $('#main').scrollTop = 0;
   renderTopbar();
   render();
+  adMaybeShow(tab);
 }
 
 function renderTopbar() {
@@ -3084,6 +3173,12 @@ function renderMine() {
         <div class="rc"><div class="t">多设备同步</div><div class="s">${syncMineSub()}</div></div>
         ${ic('right', 15)}
       </div>
+      ${(!adSdkReady() && adAvailable()) ? `
+      <div class="row" data-act="toggle-ad-preview">
+        <div class="ri" style="background:#F2F4F7;color:var(--ink-2)">${ic('grid', 17)}</div>
+        <div class="rc"><div class="t">广告位预览</div><div class="s">看看广告会出现在哪、占多大，不显示真实广告</div></div>
+        <div class="switch ${state.settings.adPreview ? 'on' : ''}" data-act="toggle-ad-preview"></div>
+      </div>` : ''}
       <div class="row" data-act="clear-schedule">
         <div class="ri" style="background:var(--rose-soft);color:var(--rose)">${ic('trash', 17)}</div>
         <div class="rc"><div class="t" style="color:var(--rose)">清理课表</div><div class="s">只删课程，设置都保留</div></div>
@@ -3117,7 +3212,7 @@ function renderMine() {
 /* ============================================================
    帮助 · 说明 · 关于
    ============================================================ */
-const APP_VERSION = '1.1.2';
+const APP_VERSION = '1.2.0';
 const APP_BUILD = '2026-11-12';
 
 let helpTab = 'faq';                       // faq | guide | about
@@ -3306,6 +3401,7 @@ const GUIDE_STEPS = [
 ];
 
 const CHANGELOG = [
+  { v: '1.2.0', d: '2026-11-13', items: ['为将来的广告位预留了位置——当前不显示任何广告，功能与之前完全一致', '「我的 → 广告位预览」可以看清广告将来会出现在哪、占多大', '只放课时费和我的页；课表页和录入表单不插广告'] },
   { v: '1.1.2', d: '2026-11-13', items: ['修好局域网直传：之前一直识别不到手机的原生能力，同步页只显示「网页版」', '现在能正常显示配对码、查找另一台手机、输码就能传'] },
   { v: '1.1.1', d: '2026-11-13', items: ['同步页的提示说准了：能分清是安装包旧了还是网络不通', '安装包落后时会直接给「更新安装包」按钮，不用自己去翻', '修掉面板底部说明被按钮挡住一截的问题'] },
   { v: '1.1.0', d: '2026-11-13', items: ['多设备同步更稳了：修掉部分机型一直扫不到对方的毛病，配对时页面不再卡住', '启动时自动体检数据，发现异常当场修正并告诉你改了什么', '课表、金额、作息这些算得不对的老问题，多半是历史数据坏了，现在会被兜住', '同步包和导入的文件若来自别的版本，也只修不丢'] },
@@ -8236,6 +8332,7 @@ document.addEventListener('click', e => {
     case 'lan-start': lanStart(); break;
     case 'lan-stop': lanStop(); break;
     case 'lan-scan': lanScan(); break;
+    case 'toggle-ad-preview': toggleAdPreview(); break;
     case 'sync-update':
       closeSheet();
       setTimeout(() => checkUpdate(false), 120);
@@ -8418,6 +8515,9 @@ function init() {
       save();
     }
   }
+  // 恢复广告位预览开关（原生侧是进程级的，重启就没了）
+  adSyncPreview();
+
   // 自检修过东西就说一声，不悄悄改用户的数据
   const repaired = (state.meta.repairNotes || []).length;
   if (repaired) {

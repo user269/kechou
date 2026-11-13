@@ -1,17 +1,18 @@
 {
-  "versionCode": 29,
-  "versionName": "1.1.2",
+  "versionCode": 30,
+  "versionName": "1.2.0",
   "notes": [
-    "修好局域网直传：之前一直识别不到手机的原生能力，同步页只显示「网页版」",
-    "现在能正常显示配对码、查找另一台手机、输码就能传"
+    "为将来的广告位预留了位置——当前不显示任何广告，功能与之前完全一致",
+    "「我的 → 广告位预览」可以看清广告将来会出现在哪、占多大",
+    "只放课时费和我的页；课表页与录入表单不插广告"
   ],
   "apk": {
-    "url": "https://github.com/user269/kechou/releases/download/v1.1.2/kebao-1.1.2.apk",
-    "size": 414967,
+    "url": "https://github.com/user269/kechou/releases/download/v1.2.0/kebao-1.2.0.apk",
+    "size": 414966,
     "mirrors": [
-      "https://ghfast.top/https://github.com/user269/kechou/releases/download/v1.1.2/kebao-1.1.2.apk",
-      "https://gh-proxy.com/https://github.com/user269/kechou/releases/download/v1.1.2/kebao-1.1.2.apk",
-      "https://ghproxy.net/https://github.com/user269/kechou/releases/download/v1.1.2/kebao-1.1.2.apk"
+      "https://ghfast.top/https://github.com/user269/kechou/releases/download/v1.2.0/kebao-1.2.0.apk",
+      "https://gh-proxy.com/https://github.com/user269/kechou/releases/download/v1.2.0/kebao-1.2.0.apk",
+      "https://ghproxy.net/https://github.com/user269/kechou/releases/download/v1.2.0/kebao-1.2.0.apk"
     ]
   },
   "web": {
@@ -20,5 +21,5 @@
     "size": 0,
     "notes": []
   },
-  "updated": "2026-11-13T07:18:29Z"
+  "updated": "2026-11-13T10:28:05Z"
 }

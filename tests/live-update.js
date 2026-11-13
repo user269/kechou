@@ -33,8 +33,8 @@ window.__api = { get state(){return state}, UPD, checkUpdate, manifestSources };
 
   const U = api.UPD;
   ok(!!U.source, '至少有一个地址连通', U.source);
-  ok(Number(U.remoteCode) >= 29, '线上 versionCode ≥ 29', U.remoteCode);
-  ok(U.remoteName === '1.1.2', '线上版本名 1.1.2', U.remoteName);
+  ok(Number(U.remoteCode) >= 30, '线上 versionCode ≥ 30', U.remoteCode);
+  ok(U.remoteName === '1.2.0', '线上版本名 1.2.0', U.remoteName);
 
   const cache = api.state.settings.updateCache;
   const man = cache && cache.body ? JSON.parse(cache.body) : {};
