@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.kebao.lessonpay"
-    android:versionCode="26"
-    android:versionName="1.0.25">
+    android:versionCode="27"
+    android:versionName="1.1.0">
 
     <uses-sdk android:minSdkVersion="23" android:targetSdkVersion="36" />
 
@@ -19,6 +19,9 @@
     <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES"
         android:usesPermissionFlags="neverForLocation" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- 局域网发现必须持有 MulticastLock，否则 WiFi 驱动会在硬件层丢弃广播包，
+         小米/OPPO/vivo 等机型会一直扫不到对方。这是普通权限，不需运行时申请。 -->
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
 
     <application
         android:name=".App"

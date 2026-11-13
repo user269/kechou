@@ -1,6 +1,10 @@
 package com.kebao.lessonpay;
 
 import android.content.Context;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
+import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.util.Log;
 
@@ -59,17 +63,34 @@ public final class LanSync {
     /** 扫描结果：key = ip:port，value = {ip, port, name, at} */
     private static final Map<String, String[]> peers = Collections.synchronizedMap(new LinkedHashMap<String, String[]>());
 
+    /** 收广播必须持有它，否则 WiFi 驱动会把这包丢在硬件层 */
+    private static WifiManager.MulticastLock mcastLock;
+    private static volatile boolean scanning = false;
+    /** 同步跑在后台线程，结果留给网页来取，避免卡住网页的调用线程 */
+    private static volatile String syncState = "idle";     // idle | running | done
+    private static volatile String syncBody = "{}";
+    private static final java.util.concurrent.ExecutorService POOL =
+            java.util.concurrent.Executors.newCachedThreadPool();
+
     private LanSync() { }
 
     /* ---------------- 生命周期 ---------------- */
 
     static synchronized String start(Context ctx) {
         stop();
+        if (!onWifi(ctx)) {
+            return "{\"ok\":false,\"msg\":\"" + esc("先连上 WiFi。用流量的时候，两台手机互相找不到") + "\"}";
+        }
         try {
             serverSocket = new ServerSocket(0);          // 端口交给系统挑，避免和别的应用撞车
             serverSocket.setReuseAddress(true);
             httpPort = serverSocket.getLocalPort();
             localAddress = localIp();
+
+            // 关键：Android 的 WiFi 驱动默认在硬件层丢弃广播/多播包以省电。
+            // 不拿 MulticastLock，小米/OPPO/vivo 等机型根本收不到对方的广播，
+            // 扫描结果永远是空的——这是这类发现协议最典型的坑。
+            acquireMulticast(ctx);
 
             serverThread = new Thread(LanSync::serveLoop, "kebao-lan-http");
             serverThread.setDaemon(true);
@@ -103,10 +124,49 @@ public final class LanSync {
         udp = null;
         serverThread = null;
         udpThread = null;
+        releaseMulticast();
         httpPort = 0;
         pairCode = "";
+        scanning = false;
+        syncState = "idle";
+        syncBody = "{}";
         inbox.clear();
         peers.clear();
+    }
+
+    /** 当前是不是在 WiFi 上：用流量或没网时，局域网这条路根本走不通，早点说清楚 */
+    private static boolean onWifi(Context ctx) {
+        if (ctx == null) return true;
+        try {
+            ConnectivityManager cm = (ConnectivityManager) ctx.getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (cm == null) return true;              // 拿不到状态就不拦，失败了再提示
+            Network n = cm.getActiveNetwork();
+            if (n == null) return false;
+            NetworkCapabilities cap = cm.getNetworkCapabilities(n);
+            return cap != null && cap.hasTransport(NetworkCapabilities.TRANSPORT_WIFI);
+        } catch (Throwable t) {
+            return true;
+        }
+    }
+
+    private static void acquireMulticast(Context ctx) {
+        try {
+            WifiManager wm = (WifiManager) ctx.getApplicationContext()
+                    .getSystemService(Context.WIFI_SERVICE);
+            if (wm == null) return;
+            mcastLock = wm.createMulticastLock("kebao-lan-sync");
+            mcastLock.setReferenceCounted(false);
+            mcastLock.acquire();
+        } catch (Throwable t) {
+            Log.w(TAG, "multicast lock: " + describe(t));
+        }
+    }
+
+    private static void releaseMulticast() {
+        try {
+            if (mcastLock != null && mcastLock.isHeld()) mcastLock.release();
+        } catch (Throwable ignored) { }
+        mcastLock = null;
     }
 
     /** 网页每次保存后把最新的包交过来，别人来取就能拿到当前的 */
@@ -121,7 +181,19 @@ public final class LanSync {
             Socket s = null;
             try {
                 s = serverSocket.accept();
-                handle(s);
+                // 交给线程池：一次同步会同时有 GET 和 POST 两条请求，
+                // 单线程串行处理会让后一条白等前一条的连接关闭
+                final Socket sock = s;
+                POOL.execute(() -> {
+                    try {
+                        handle(sock);
+                    } catch (Exception e) {
+                        Log.w(TAG, "handle: " + describe(e));
+                    } finally {
+                        try { sock.close(); } catch (Exception ignored) { }
+                    }
+                });
+                s = null;   // 已交给线程池，外层不要再关
             } catch (Exception e) {
                 if (serverSocket == null || serverSocket.isClosed()) return;
                 Log.w(TAG, "accept: " + describe(e));
@@ -186,6 +258,8 @@ public final class LanSync {
             }
             String text = new String(body, 0, off, StandardCharsets.UTF_8);
             if (text.contains("\"kbsync\"")) {
+                // 上限 8 条：正常一次同步只有一条，留余量防止异常情况下内存被撑爆
+                while (inbox.size() >= 8) inbox.remove(0);
                 inbox.add("{\"from\":\"" + esc(from) + "\",\"packet\":" + text + "}");
                 respond(s, 200, "{\"ok\":true}");
             } else {
@@ -274,22 +348,45 @@ public final class LanSync {
         }
     }
 
-    static String scan(int timeoutMs) {
+    /**
+     * 发起扫描后立刻返回，结果靠 scanResult() 轮询取。
+     *
+     * 原来是在这里 sleep 2.6 秒等回应——@JavascriptInterface 的方法都跑在
+     * WebView 的同一个桥上线程，这一睡会把网页的所有原生调用一起卡住，
+     * 界面表现就是点一下「查找」整个页面顿住。改成后台线程跑、前台只查结果。
+     */
+    static String scanStart(int timeoutMs) {
         if (udp == null || udp.isClosed()) {
-            return "{\"ok\":false,\"peers\":[],\"msg\":\"" + esc("先点「开启接收」") + "\"}";
+            return "{\"ok\":false,\"msg\":\"" + esc("先点「开启接收」") + "\"}";
         }
+        if (scanning) return "{\"ok\":true}";
+        scanning = true;
         peers.clear();
-        try {
-            byte[] m = PROBE.getBytes(StandardCharsets.UTF_8);
-            sendProbe(m, "255.255.255.255");
-            String sub = subnetBroadcast();
-            if (sub != null) sendProbe(m, sub);   // 有些路由器只转其中一种广播
-            Thread.sleep(Math.max(800, Math.min(timeoutMs, 6000)));
-        } catch (Exception e) {
-            return "{\"ok\":false,\"peers\":[],\"msg\":\"" + esc(describe(e)) + "\"}";
-        }
+        final int ms = Math.max(800, Math.min(timeoutMs, 6000));
 
-        StringBuilder sb = new StringBuilder("{\"ok\":true,\"peers\":[");
+        Thread t = new Thread(() -> {
+            try {
+                byte[] m = PROBE.getBytes(StandardCharsets.UTF_8);
+                sendProbe(m, "255.255.255.255");
+                String sub = subnetBroadcast();
+                if (sub != null) sendProbe(m, sub);   // 有些路由器只转其中一种广播
+                // 广播发两次，丢包时还有第二次机会
+                Thread.sleep(Math.max(300, ms / 3));
+                sendProbe(m, "255.255.255.255");
+                if (sub != null) sendProbe(m, sub);
+                Thread.sleep(Math.max(300, ms - ms / 3));
+            } catch (Throwable ignored) {
+            } finally {
+                scanning = false;
+            }
+        }, "kebao-lan-scan");
+        t.setDaemon(true);
+        t.start();
+        return "{\"ok\":true}";
+    }
+
+    static String scanResult() {
+        StringBuilder sb = new StringBuilder("{\"ok\":true,\"scanning\":").append(scanning).append(",\"onWifi\":").append(localAddress != null && !localAddress.isEmpty()).append(",\"peers\":[");
         boolean first = true;
         long now = System.currentTimeMillis();
         synchronized (peers) {
@@ -316,16 +413,49 @@ public final class LanSync {
     /**
      * 先拉对方的、再把自己的推过去。
      * 两边都合并一次，结果也就两边都齐了——不用第二次握手。
+     *
+     * 同样跑在后台线程：网络慢的时候要等好几秒，同步调用会把网页卡住。
      */
-    static String sync(String ip, int port, String code, String packet) {
+    static String syncStart(String ip, int port, String code, String packet) {
+        if ("running".equals(syncState)) {
+            return "{\"ok\":false,\"msg\":\"" + esc("上一次同步还没结束") + "\"}";
+        }
         if (ip == null || ip.trim().isEmpty() || port <= 0) {
             return "{\"ok\":false,\"msg\":\"" + esc("地址不对") + "\"}";
         }
         if (code == null || code.trim().isEmpty()) {
             return "{\"ok\":false,\"msg\":\"" + esc("先输入对方屏幕上显示的 4 位配对码") + "\"}";
         }
-        String base = "http://" + ip.trim() + ":" + port;
-        String pulled = request("GET", base + "/snapshot?code=" + code.trim(), null);
+        final String fIp = ip.trim();
+        final String fCode = code.trim();
+        syncState = "running";
+        syncBody = "{}";
+
+        Thread t = new Thread(() -> {
+            try {
+                syncBody = doSync(fIp, port, fCode, packet);
+            } catch (Throwable e) {
+                syncBody = "{\"ok\":false,\"msg\":\"" + esc("同步失败：" + describe(e)) + "\"}";
+            } finally {
+                syncState = "done";
+            }
+        }, "kebao-lan-sync");
+        t.setDaemon(true);
+        t.start();
+        return "{\"ok\":true}";
+    }
+
+    /** 取同步结果；拿到了就把状态复位，只交付一次 */
+    static String syncPoll() {
+        String st = syncState;
+        if (!"done".equals(st)) return "{\"state\":\"" + st + "\"}";
+        syncState = "idle";
+        return "{\"state\":\"done\",\"result\":" + syncBody + "}";
+    }
+
+    private static String doSync(String ip, int port, String code, String packet) {
+        String base = "http://" + ip + ":" + port;
+        String pulled = request("GET", base + "/snapshot?code=" + code, null);
         if (pulled == null) {
             return "{\"ok\":false,\"msg\":\"" + esc("连不上，或者配对码不对") + "\"}";
         }
@@ -423,7 +553,7 @@ public final class LanSync {
         try { return Long.parseLong(v); } catch (Exception e) { return 0L; }
     }
 
-    private static String describe(Exception e) {
+    private static String describe(Throwable e) {
         String m = e.getMessage();
         return (m == null || m.isEmpty()) ? e.getClass().getSimpleName() : m;
     }

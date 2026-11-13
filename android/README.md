@@ -72,6 +72,15 @@ targetSdk 36 起预测性返回默认开启，系统只调 `OnBackInvokedCallbac
 找到之后点一下，客户端先拉 `snapshot`、再推 `apply`——**一次往返两边都齐了**，不用二次握手。
 对方收到的包放在内存，网页每 1.2 秒来取一次（`lanInbox`），拿到就合并。
 
+**两个必须处理、不处理就"看着像坏"的地方**：
+
+- **必须持有 `MulticastLock`**。Android 的 WiFi 驱动默认在**硬件层**丢弃广播和多播包来省电，
+  没这个锁的话，小米/OPPO/vivo 等机型永远扫不到对方——socket 开着、代码没错、结果就是空列表。
+  权限是 `CHANGE_WIFI_MULTICAST_STATE`（普通权限，不用运行时申请），`onStop` 时随服务一起释放。
+- **别在桥接方法里阻塞**。`@JavascriptInterface` 的方法都跑在 WebView 的同一个桥上线程，
+  在里面 `sleep(2600)` 等广播、或者同步等 HTTP 响应，网页的所有原生调用会一起卡住，
+  表现就是"点一下按钮整个页面顿住"。现在扫描和同步都改成：**立即返回 + 后台线程干活 + 前台轮询结果**。
+
 几个实际会踩的点：
 
 - **明文 HTTP 在 Android 9+ 默认被拦**。清单里开了 `android:usesCleartextTraffic="true"`，
@@ -84,6 +93,7 @@ targetSdk 36 起预测性返回默认开启，系统只调 `OnBackInvokedCallbac
 - **局域网权限**：Android 16 起本地网络访问是 *opt-in*（默认仍开放），Android 17 才强制、
   且只针对 targetSdk 37+。当前 targetSdk 36 不受影响，但清单里已经先声明了
   `NEARBY_WIFI_DEVICES`，以后升版本不用回头改。
+- **用流量或没 WiFi 时直接拒绝启动**，而不是让用户对着一个永远空着的列表猜。
 
 传输层之外，**合并逻辑完全在网页侧**（`mergeSyncPacket`），原生只负责搬字节。
 所以「怎么传」和「怎么合」是分开的：以后加蓝牙、加网盘，不用碰合并代码。
@@ -117,6 +127,45 @@ targetSdk 36 起预测性返回默认开启，系统只调 `OnBackInvokedCallbac
   `window.__kebaoOpenUpdate()`，直接打开更新面板并静默检查一次。
 - 同一版本只提醒一次（`kebao_update_check.notifiedCode`），不重复打扰。
 
+## 引入第三方库
+
+把 `*.jar` / `*.aar` 丢进 `android/libs/` 就行，构建脚本自动处理，**不用改任何命令**。
+
+| 文件 | 处理方式 |
+|---|---|
+| `*.jar` | 进 `javac` 的 classpath，和项目代码一起交给 `d8` 转成 dex |
+| `*.aar` | 解出 `classes.jar`（同上）、`res/` 合并进资源、`jni/<abi>/*.so` 打进 `lib/<abi>/` |
+
+第 3 步会打印这批引入了什么；AAR 里的权限和组件声明也会列出来，
+但 **manifest 不做自动合并**——需要声明的 Activity/Service 得手动加到主清单。
+
+### 三个边界（都是踩过的）
+
+1. **AAR 不传递依赖**。它依赖的 `androidx.*`、`okhttp` 之类要自己把 jar 也放进来，
+   否则编译期能看到的类，运行期会 `NoClassDefFoundError`。
+2. **空的 `classes.jar` 会被警告**。AAR 打包不完整时 class 可能是空的，
+   不检查就会"构建通过、运行就崩"。
+3. **带 `.so` 的库要过 16KB 页校验**。`p_align < 16384` 会直接构建失败——这是故意的，
+   免得打出"装得上、一加载就崩"的包。
+
+### 这条链路是真的验证过
+
+不是写完就交：用一个合成的 jar（含 `probe.Probe`）和一个合成 aar（含 `classes.jar`、
+`res/values/strings.xml`、`jni/arm64-v8a/libprobeui.so`、两个权限声明）跑了一次完整构建，
+
+- dex 里能搜到两个库的字符串 → classpath 与 d8 生效
+- `aapt2 dump resources` 能看到 aar 里的 `probe_aar_marker` → 资源合并生效
+- `.so` 落在 `lib/arm64-v8a/`，文件偏移 409600（= 16384 × 25）→ 16KB 对齐生效
+- 构建输出打印 `probeui 需要权限：CAMERA VIBRATE`
+
+验证用的探针已删除，`libs/` 目录保持为空。
+
+### 现在为什么是空的
+
+不是因为不支持，而是没有非它不可的库：HTTP 服务/客户端自己写了（只三个端点，引框架更重）、
+JSON 用系统自带 `org.json`、zip/deflate 为 xlsx 解析自己实现了（零依赖）。
+真正值得接的是推送 SDK、支付 SDK、OCR 这类——放进来即可。
+
 ## 重新构建
 
 需要 JDK 17 + Android SDK（`platforms/android-37.0`、`build-tools/37.0.0`）。
@@ -126,8 +175,8 @@ targetSdk 36 起预测性返回默认开启，系统只调 `OnBackInvokedCallbac
 bash build.sh
 ```
 
-脚本会依次做：同步网页资源 → `aapt2 compile` → `aapt2 link` → `javac` → `d8` → `zipalign` → `apksigner`。
-全流程不依赖 Gradle，秒级出包。
+脚本会依次做：同步网页资源 → 收集第三方库 → `aapt2 compile` → `aapt2 link` → `javac` → `d8`
+→ 打包原生库 → `zipalign` → `apksigner`。全流程不依赖 Gradle，秒级出包。
 
 > 改界面请改上级目录的 `app.js / styles.css / index.html`，构建时会自动同步到 `assets/`，
 > 不要直接改 `assets/` 里的副本，否则下次构建会被覆盖。
@@ -149,6 +198,7 @@ KS_PASS=your-password bash android/build.sh
 ```
 android/
 ├── build.sh                          一键构建脚本
+├── libs/                             第三方 jar / aar 放这里（见该目录 README）
 ├── keystore.jks                      签名证书
 ├── app/src/main/
 │   ├── AndroidManifest.xml           权限、Activity、三个 Receiver
@@ -161,6 +211,7 @@ android/
 │       ├── WebBridge.java            暴露给网页的原生接口
 │       ├── Updater.java              拉更新清单、下载解压、装 APK、失败回滚
 │       ├── UpdateCheckReceiver.java  后台每 6 小时查新版本并发通知
+│       ├── LanSync.java              局域网直传：HTTP 服务 + UDP 发现 + 多播锁
 │       ├── ApkProvider.java          content:// 把安装包交给系统安装器
 │       ├── AlarmScheduler.java       提醒计划 → 系统闹钟
 │       ├── ReminderReceiver.java     闹钟到点发通知

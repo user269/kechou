@@ -827,6 +827,168 @@ let state = {
   },
 };
 
+/* ============================================================
+   数据自检与修复
+   ------------------------------------------------------------
+   坏数据比崩溃更麻烦：一条 typeId 指向不存在的类型，getType() 会悄悄
+   回落到第一种课，金额按错误单价算出来，界面上看不出任何异常。
+   所以每次启动先过一遍，能修的修掉，修了什么记下来告诉用户。
+   ============================================================ */
+
+const REPAIR_DATE = /^\d{4}-\d{2}-\d{2}$/;
+const REPAIR_HM = /^([01]\d|2[0-3]):[0-5]\d$/;
+const LESSON_STATUS = ['normal', 'canceled', 'leave', 'swapped'];
+
+function repairState() {
+  const fixed = [];
+  const s = state;
+  const note = msg => { if (!fixed.includes(msg)) fixed.push(msg); };
+
+  /* ---- 课程类型：金额全靠它 ---- */
+  if (!Array.isArray(s.types) || !s.types.length) {
+    s.types = defaultTypes();
+    note('课程类型丢失，已恢复默认');
+  } else {
+    const seen = new Set();
+    const kept = [];
+    s.types.forEach(t => {
+      if (!t || !t.id) { note('有课程类型缺少标识，已移除'); return; }
+      if (seen.has(t.id)) { note('有重复的课程类型，已去重'); return; }
+      seen.add(t.id);
+      if (!Number.isFinite(Number(t.price))) { t.price = 0; note('有课程类型单价不是数字，已归零'); }
+      else t.price = Number(t.price);
+      if (!Number.isFinite(Number(t.factor)) || Number(t.factor) <= 0) { t.factor = 1; }
+      else t.factor = Number(t.factor);
+      if (!['period', 'hour', 'student'].includes(t.unit)) t.unit = 'period';
+      kept.push(t);
+    });
+    if (!kept.length) { s.types = defaultTypes(); note('课程类型全部不可用，已恢复默认'); }
+    else s.types = kept;
+  }
+  const typeIds = new Set(s.types.map(t => t.id));
+  const fallbackType = (s.types.find(t => t.enabled !== false) || s.types[0]).id;
+
+  /* ---- 作息：决定时长和提醒时间 ---- */
+  if (!Array.isArray(s.periods) || !s.periods.length) {
+    s.periods = DEFAULT_PERIODS.map(p => ({ ...p }));
+    note('作息时间表丢失，已恢复默认');
+  } else {
+    let badTime = 0;
+    s.periods.forEach((p, i) => {
+      if (!p || typeof p !== 'object') {
+        s.periods[i] = { ...DEFAULT_PERIODS[Math.min(i, DEFAULT_PERIODS.length - 1)] };
+        note('有作息节次损坏，已用默认值补上');
+        return;
+      }
+      if (!REPAIR_HM.test(String(p.start))) { p.start = '08:00'; badTime++; }
+      if (!REPAIR_HM.test(String(p.end))) { p.end = '08:45'; badTime++; }
+    });
+    if (badTime) note('有作息时间格式不对，已改成整点默认');
+
+    // 节次编号只在「重复 / 非整数」时重排，而且起点沿用原数据的最小值。
+    // 默认作息是从 0 开始（早读 = 第 0 节），如果硬按 i+1 改成 1 开头，
+    // 所有课的时间会整体错位一节——这个坑测试当场抓到了。
+    const nos = s.periods.map(p => Number(p.no));
+    const valid = nos.filter(n => Number.isInteger(n));
+    if (valid.length !== s.periods.length || new Set(valid).size !== s.periods.length) {
+      const base = Math.max(0, valid.length ? Math.min(...valid) : 0);
+      s.periods.forEach((p, i) => { p.no = base + i; });
+      note('作息节次编号有重复或异常，已按顺序重排');
+    }
+  }
+  // 合法节次是 periods 里实际的 no 集合（可能是 0..11，也可能自定义），
+  // 不能用 1..length 判断，否则早读（第 0 节）会被判成非法。
+  const periodNos = s.periods.map(p => p.no);
+  const minNo = Math.min(...periodNos);
+  const maxNo = Math.max(...periodNos);
+
+  /* ---- 课程记录：一条坏记录就是一笔错账 ---- */
+  if (!Array.isArray(s.lessons)) {
+    s.lessons = [];
+    note('课程记录格式损坏，已清空（设置都保留）');
+  } else {
+    let badDate = 0, badPeriod = 0, badType = 0, badDur = 0, badId = 0, badStatus = 0;
+    const today = todayYmd();
+    const seenIds = new Set();
+    s.lessons = s.lessons.filter(l => l && typeof l === 'object').map(l => {
+      if (!l.id || seenIds.has(l.id)) { l.id = uid(); badId++; }
+      seenIds.add(l.id);
+      if (!REPAIR_DATE.test(String(l.date))) { l.date = today; badDate++; }
+      const p = Number(l.period);
+      if (!Number.isFinite(p) || p < minNo || p > maxNo) {
+        l.period = clamp(Number.isFinite(p) ? Math.round(p) : minNo, minNo, maxNo);
+        badPeriod++;
+      }
+      if (!typeIds.has(l.typeId)) { l.typeId = fallbackType; badType++; }
+      if (l.dur != null && (!Number.isFinite(Number(l.dur)) || Number(l.dur) <= 0)) {
+        l.dur = Number(s.settings.defaultDur) || 45;
+        badDur++;
+      }
+      if (!LESSON_STATUS.includes(l.status)) { l.status = 'normal'; badStatus++; }
+      return l;
+    });
+    if (badId) note(`${badId} 节课程缺少标识，已补上`);
+    if (badDate) note(`${badDate} 节课程日期不合法，已改成今天`);
+    if (badPeriod) note(`${badPeriod} 节课程节次超出作息范围，已夹到有效节次`);
+    if (badType) note(`${badType} 节课程的类型不存在，已改成「${(s.types.find(t => t.id === fallbackType) || {}).name || fallbackType}」`);
+    if (badDur) note(`${badDur} 节课程时长不合法，已恢复默认`);
+    if (badStatus) note(`${badStatus} 节课程状态异常，已改回正常`);
+  }
+
+  /* ---- 总课表：键格式坏了对不上任何一天 ---- */
+  if (s.master && typeof s.master === 'object') {
+    let bad = 0;
+    Object.keys(s.master).forEach(k => {
+      const parts = String(k).split('#');
+      const cell = s.master[k];
+      const okKey = parts.length === 3
+        && /^[0-6]$/.test(parts[0])
+        && Number(parts[1]) >= minNo && Number(parts[1]) <= maxNo
+        && /^(all|odd|even)$/.test(parts[2]);
+      if (!okKey || !cell || typeof cell !== 'object' || !typeIds.has(cell.typeId)) {
+        delete s.master[k];
+        bad++;
+      }
+    });
+    if (bad) note(`总课表里 ${bad} 个格子的数据不可用，已移除`);
+  } else if (s.master != null) {
+    s.master = {};
+    note('总课表格式损坏，已重置');
+  }
+
+  /* ---- 数值设置：越界会让提醒或统计出错 ---- */
+  const st = s.settings || {};
+  const numFix = (key, min, max, label) => {
+    const v = Number(st[key]);
+    if (!Number.isFinite(v) || v < min || v > max) {
+      st[key] = clamp(Number.isFinite(v) ? v : min, min, max);
+      if (label) note(label);
+    }
+  };
+  numFix('remindBefore', 0, 120, '「提前提醒」的分钟数超出范围，已修正');
+  numFix('termWeeks', 1, 30, '学期周数超出范围，已修正');
+  numFix('defaultDur', 1, 300, '默认课程时长超出范围，已修正');
+  numFix('overtimeFrom', 0, 200, null);
+  numFix('overtimeRate', 0.1, 5, null);
+
+  /* ---- 补贴与扣款 ---- */
+  if (Array.isArray(s.extras)) {
+    let bad = 0;
+    s.extras = s.extras.filter(e => {
+      if (!e || typeof e !== 'object' || !e.id) { bad++; return false; }
+      if (!Number.isFinite(Number(e.amount))) { bad++; return false; }
+      if (!['add', 'sub'].includes(e.kind)) e.kind = 'add';
+      if (!['monthly', 'once'].includes(e.cycle)) e.cycle = 'once';
+      return true;
+    });
+    if (bad) note(`补贴与扣款里有 ${bad} 条数据不可用，已移除`);
+  } else if (s.extras != null) {
+    s.extras = [];
+  }
+
+  return fixed;
+}
+
 function save() {
   try {
     // 记下每条记录的修改时间：同步靠它判断「谁更新」，业务代码不用关心
@@ -868,6 +1030,16 @@ function load() {
     state.meta.fp = state.meta.fp || {};
     state.meta.tomb = state.meta.tomb || {};
     if (!state.meta.deviceId) deviceInfo();
+    // 数据修正在这里做：越早越好，后面所有计算都建立在干净数据上
+    try {
+      const fixed = repairState();
+      if (fixed.length) {
+        state.meta.repairedAt = Date.now();
+        state.meta.repairNotes = fixed.slice(0, 8);
+      }
+    } catch (e) {
+      console.warn('数据自检失败', e);
+    }
     return true;
   } catch (e) {
     console.warn('读取失败', e);
@@ -2945,7 +3117,7 @@ function renderMine() {
 /* ============================================================
    帮助 · 说明 · 关于
    ============================================================ */
-const APP_VERSION = '1.0.25';
+const APP_VERSION = '1.1.0';
 const APP_BUILD = '2026-11-12';
 
 let helpTab = 'faq';                       // faq | guide | about
@@ -3134,7 +3306,7 @@ const GUIDE_STEPS = [
 ];
 
 const CHANGELOG = [
-  { v: '1.0.25', d: '2026-11-13', items: ['新增「多设备同步」：同一个 WiFi 下两台手机直接对传，不经过任何服务器', '连之前要输对方屏幕上的 4 位配对码，同一个 WiFi 的其他人连不上', '也可以导出同步包，用微信发过去再导入', '同步是合并：两边各自加的课都留着，同一条记录以改得晚的为准'] },
+  { v: '1.1.0', d: '2026-11-13', items: ['多设备同步更稳了：修掉部分机型一直扫不到对方的毛病，配对时页面不再卡住', '启动时自动体检数据，发现异常当场修正并告诉你改了什么', '课表、金额、作息这些算得不对的老问题，多半是历史数据坏了，现在会被兜住', '同步包和导入的文件若来自别的版本，也只修不丢'] },
   { v: '1.0.23', d: '2026-11-13', items: ['课表可以直接从 .xlsx 导入，不用再另存为 CSV', 'Excel 里的日期列会自动认出来；表头上方有标题行也没关系', '老式 .xls 仍不支持，会提示另存为 .xlsx 或 CSV'] },
   { v: '1.0.22', d: '2026-11-13', items: ['计费方案可以存多套，换学校、换算法一键切回', '方案能生成一段分享码发给同事，对方粘贴即用', '课时费页新增「学期总览」：整个学期的总额、按月分布、类型占比', '批量导入课表支持直接读 CSV 文件；帮助里补了「口径」问答'] },
   { v: '1.0.21', d: '2026-11-12', items: ['作息模板改为优先走实时线路，更新后不再被 CDN 缓存拖住'] },
@@ -5699,15 +5871,35 @@ function lanStop() {
 
 function lanScan() {
   if (!hasLan() || !lanInfo.on) return;
+  const r = lanParse(window.Native.lanScanStart(2600), null);
+  if (!r || !r.ok) { toast((r && r.msg) || '没能开始查找'); return; }
+
   lanInfo.scanning = true;
   refreshSyncSheet();
-  const r = lanParse(window.Native.lanScan(2600), { ok: false, peers: [] });
-  lanInfo.scanning = false;
-  lanPeers = Array.isArray(r.peers)
-    ? r.peers.filter(p => p && p.ip && p.ip !== lanInfo.ip)
-    : [];
-  refreshSyncSheet();
-  if (!lanPeers.length) toast('没找到另一台手机，两台都开到这个页面再试');
+  const t0 = Date.now();
+  let lastSig = '';
+
+  const step = () => {
+    if (!sheetOpen() || !$('#sync-device')) { lanInfo.scanning = false; return; }
+    const st = lanParse(window.Native.lanScanResult(), null) || {};
+    const list = (st.peers || []).filter(p => p && p.ip && p.ip !== lanInfo.ip);
+    const sig = JSON.stringify(list);
+    if (sig !== lastSig) {
+      lastSig = sig;
+      lanPeers = list;
+      refreshSyncSheet();               // 边扫边出，扫到一台就显示一台
+    }
+    if (!st.scanning || Date.now() - t0 > 8000) {
+      lanInfo.scanning = false;
+      refreshSyncSheet();
+      if (!lanPeers.length) {
+        toast('没找到另一台手机。两台要连同一个 WiFi，有些校园网或公司网不允许设备互访，这种情况用「用文件同步」');
+      }
+      return;
+    }
+    setTimeout(step, 400);
+  };
+  setTimeout(step, 400);
 }
 
 let lanTarget = null;
@@ -5738,26 +5930,42 @@ function lanGo() {
   if (!t || !hasLan()) return;
   const code = (($('#lan-code') || {}).value || '').trim();
   if (!/^\d{4}$/.test(code)) { toast('配对码是 4 位数字'); return; }
-  closeSheet();
-  toast('正在和 ' + t.name + ' 同步…');
-  const r = lanParse(window.Native.lanSync(t.ip, t.port, code, JSON.stringify(buildSyncPacket())), null);
-  if (!r || !r.ok) {
-    toast((r && r.msg) || '连不上，确认两台在同一个 WiFi');
+
+  const started = lanParse(
+    window.Native.lanSyncStart(t.ip, t.port, code, JSON.stringify(buildSyncPacket())), null);
+  if (!started || !started.ok) {
+    toast((started && started.msg) || '没能开始同步');
     return;
   }
-  let stats = null;
-  if (r.pulled) {
-    try {
-      stats = mergeSyncPacket(r.pulled);
-      save();
-      render();
-    } catch (e) {
-      toast(e && e.message ? e.message : '对方的数据读不了');
+  closeSheet();
+  toast('正在和 ' + t.name + ' 同步…');
+
+  const t0 = Date.now();
+  const step = () => {
+    const st = lanParse(window.Native.lanSyncPoll(), null) || {};
+    if (st.state !== 'done') {
+      if (Date.now() - t0 > 30000) { toast('同步超时，检查两台是否在同一个 WiFi'); return; }
+      setTimeout(step, 300);
       return;
     }
-  }
-  lastSyncStats = stats;
-  openSyncResult(stats, t.name);
+    const res = st.result || {};
+    if (!res.ok) { toast(res.msg || '同步失败'); return; }
+
+    let stats = null;
+    if (res.pulled) {
+      try {
+        stats = mergeSyncPacket(res.pulled);
+        save();
+        render();
+      } catch (e) {
+        toast(e && e.message ? e.message : '对方的数据读不了');
+        return;
+      }
+    }
+    lastSyncStats = stats;
+    openSyncResult(stats, t.name);
+  };
+  setTimeout(step, 300);
 }
 
 /** 对方推过来的包，轮询取回来合并 */
@@ -8167,6 +8375,12 @@ function init() {
       save();
     }
   }
+  // 自检修过东西就说一声，不悄悄改用户的数据
+  const repaired = (state.meta.repairNotes || []).length;
+  if (repaired) {
+    setTimeout(() => toast(`启动时修正了 ${repaired} 处数据问题`, 'alert'), 900);
+  }
+
   // 老数据补一个学期首周：取最早一节课所在周的周一
   if (!state.settings.termStart) {
     const min = state.lessons.length

@@ -350,14 +350,26 @@ public class WebBridge {
         LanSync.publish(json);
     }
 
+    /** 发起扫描后立刻返回，结果用 lanScanResult() 轮询 */
     @JavascriptInterface
-    public String lanScan(int timeoutMs) {
-        return LanSync.scan(timeoutMs);
+    public String lanScanStart(int timeoutMs) {
+        return LanSync.scanStart(timeoutMs);
     }
 
     @JavascriptInterface
-    public String lanSync(String ip, int port, String code, String packet) {
-        return LanSync.sync(ip, port, code, packet);
+    public String lanScanResult() {
+        return LanSync.scanResult();
+    }
+
+    /** 发起同步后立刻返回，结果用 lanSyncPoll() 轮询 */
+    @JavascriptInterface
+    public String lanSyncStart(String ip, int port, String code, String packet) {
+        return LanSync.syncStart(ip, port, code, packet);
+    }
+
+    @JavascriptInterface
+    public String lanSyncPoll() {
+        return LanSync.syncPoll();
     }
 
     @JavascriptInterface
