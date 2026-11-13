@@ -1,16 +1,19 @@
 {
-  "versionCode": 22,
-  "versionName": "1.0.21",
+  "versionCode": 23,
+  "versionName": "1.0.22",
   "notes": [
-    "作息模板改为优先走实时线路，更新后不会拿到缓存的旧模板"
+    "计费方案可存多套，换学校 / 换算法一键切回",
+    "方案能生成分享码发给同事，对方粘贴即用",
+    "新增「学期总览」：整学期的总额、按月分布、类型占比",
+    "批量导入课表可直接读 CSV 文件；帮助补充「口径」问答"
   ],
   "apk": {
-    "url": "https://github.com/user269/kechou/releases/download/v1.0.21/kebao-1.0.21.apk",
-    "size": 378100,
+    "url": "https://github.com/user269/kechou/releases/download/v1.0.22/kebao-1.0.22.apk",
+    "size": 386295,
     "mirrors": [
-      "https://ghfast.top/https://github.com/user269/kechou/releases/download/v1.0.21/kebao-1.0.21.apk",
-      "https://gh-proxy.com/https://github.com/user269/kechou/releases/download/v1.0.21/kebao-1.0.21.apk",
-      "https://ghproxy.net/https://github.com/user269/kechou/releases/download/v1.0.21/kebao-1.0.21.apk"
+      "https://ghfast.top/https://github.com/user269/kechou/releases/download/v1.0.22/kebao-1.0.22.apk",
+      "https://gh-proxy.com/https://github.com/user269/kechou/releases/download/v1.0.22/kebao-1.0.22.apk",
+      "https://ghproxy.net/https://github.com/user269/kechou/releases/download/v1.0.22/kebao-1.0.22.apk"
     ]
   },
   "web": {
@@ -19,5 +22,5 @@
     "size": 0,
     "notes": []
   },
-  "updated": "2026-11-12T12:57:29Z"
+  "updated": "2026-11-13T00:20:46Z"
 }

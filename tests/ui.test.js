@@ -48,15 +48,24 @@ console.log('\n【2】本周剩余：只算今天没上完的 + 本周余下几�
   const w2 = boot();
   const a2 = w2.__api;
   const t0 = a2.todayYmd();
-  a2.state.lessons = [
-    { id: 'e1', date: t0, period: 1, typeId: 'regular', status: 'normal', dur: 45 },
-    { id: 'e2', date: t0, period: 11, typeId: 'regular', status: 'normal', dur: 45 },
-    { id: 'n1', date: a2.ymd(a2.addDays(new Date(), 7)), period: 2, typeId: 'regular', status: 'normal', dur: 45 },
-    { id: 'l1', date: t0, period: 12, typeId: 'regular', status: 'leave', dur: 45 },
-  ];
-  a2.switchTab('home'); a2.switchTab('mine');
-  const rest = Number($$(w2, '#page-mine .mp-kpis > div')[2].querySelector('b').textContent);
-  ok(rest <= 1, '已结束/请假/下周都不算', rest);
+  // 今天是几点会影响「今天上没上完」，所以按当前时刻挑一节已结束、一节还没开始的课，
+  // 这样测试在早上、中午、夜里跑都成立（原写法按固定节次，换时段就会挂）。
+  const endOf = no => a2.lessonEnd({ date: t0, period: no, durAuto: true });
+  const past = a2.state.periods.filter(p => endOf(p.no) < new Date()).map(p => p.no).pop();
+  const future = a2.state.periods.filter(p => endOf(p.no) > new Date()).map(p => p.no)[0];
+  if (past && future && future !== past) {
+    a2.state.lessons = [
+      { id: 'e1', date: t0, period: past, typeId: 'regular', status: 'normal', dur: 45 },
+      { id: 'e2', date: t0, period: future, typeId: 'regular', status: 'normal', dur: 45 },
+      { id: 'n1', date: a2.ymd(a2.addDays(new Date(), 7)), period: 2, typeId: 'regular', status: 'normal', dur: 45 },
+      { id: 'l1', date: t0, period: future, typeId: 'regular', status: 'leave', dur: 45 },
+    ];
+    a2.switchTab('home'); a2.switchTab('mine');
+    const rest = Number($$(w2, '#page-mine .mp-kpis > div')[2].querySelector('b').textContent);
+    ok(rest === 1, '只算今天还没上完的那节，请假与下周都不算', rest);
+  } else {
+    ok(true, '当前时刻找不到「已结束 + 未开始」的组合，跳过');
+  }
 }
 
 console.log('\n【3】学期卡：周次、单双周、剩余周数');

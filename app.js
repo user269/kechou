@@ -784,6 +784,7 @@ function defaultSettings() {
     lastUpdateOk: 0,
     lastLesson: null,          // 上次录入课程时的偏好（类型、时长、人数、延长），下次自动带出
     extendTypeId: 'self',      // 延长课时按哪个类型的单价计价（默认自习）
+    activeScheme: '',          // 当前应用的保存方案 id（空 = 未保存的自定义）
     termStart: '',             // 学期第一周的周一（用于周次编号与单双周判定）
     termWeeks: 20,             // 学期总周数
     holidaySkip: true,         // 排课时跳过法定假日（半天只排到放学时刻）
@@ -816,6 +817,7 @@ let state = {
   holidays: allBuiltinHolidays(),   // 法定节假日（放假 / 补班），可自行增删改
   templates: [],        // 联网同步来的作息模板（内置的另算，见 allPresets）
   extras: [],           // 补贴与扣款：{id,name,amount,kind:'add'|'sub',cycle:'monthly'|'once',date}
+  schemes: [],          // 保存的计费方案：{id,name,at,snap}
   meta: { seeded: false, notified: {}, holidaySyncAt: 0, templateSyncAt: 0 },
 };
 
@@ -2727,6 +2729,11 @@ function renderPay() {
           <div class="rc"><div class="t">导出表格</div><div class="s">CSV 文件，Excel / WPS 可直接打开求和</div></div>
           ${ic('right', 15)}
         </div>
+        <div class="row" data-act="term-report" style="padding-left:0;padding-right:0;border-top:1px solid var(--line-2)">
+          <div class="ri" style="background:var(--violet-soft);color:var(--violet)">${ic('chart', 17)}</div>
+          <div class="rc"><div class="t">学期总览</div><div class="s">整个学期的总额、按月分布与类型占比</div></div>
+          ${ic('right', 15)}
+        </div>
       </div>
       <div class="help-note" style="margin-top:10px">只统计本机记过的课；还没上的课按计划时长计入「待上」。</div>
     </div>
@@ -2915,7 +2922,7 @@ function renderMine() {
 /* ============================================================
    帮助 · 说明 · 关于
    ============================================================ */
-const APP_VERSION = '1.0.21';
+const APP_VERSION = '1.0.22';
 const APP_BUILD = '2026-11-12';
 
 let helpTab = 'faq';                       // faq | guide | about
@@ -3020,6 +3027,39 @@ const FAQ_GROUPS = [
       },
     ],
   },
+  {
+    name: '口径',
+    items: [
+      {
+        q: '跨月的课算哪个月？',
+        a: `按<b>上课那天</b>算。比如 12 月 31 日的晚自习，就算 12 月，哪怕下课已经过了零点。<br>所以月初核对时，只要看那个月的账单就是完整的。`,
+      },
+      {
+        q: '请假、取消的课要不要算钱？',
+        a: `不算。点开那节课标成<b>请假</b>或<b>取消</b>后，它既不进金额，也不进节数和课时。<br>好处是不用删记录——月底翻回来还能看到「这节确实没上」。`,
+      },
+      {
+        q: '补课、调休挪过来的课怎么算？',
+        a: `都算<b>实际上课那天</b>的钱，按那节课原本的类型单价结算，不会因为「补」就减价。<br>挪到周日的课进周日所在那个月，原定日期的记录会被替换掉，不会重复计。`,
+        go: { act: 'swap', text: '去看调课与调休' },
+      },
+      {
+        q: '班级系数是按班算还是按人算？',
+        a: `按<b>班级名里的关键词</b>算，一整个班都乘同一个系数，和个人无关。<br>比如关键词「高三 ×1.2」，那么高三(1)、高三(7) 的所有课都乘 1.2；想给某个班单独设，就把那个班名当成关键词加进去。`,
+        go: { act: 'calc', text: '设置班级系数' },
+      },
+      {
+        q: '拖堂的时长算不算进阶梯和超课时？',
+        a: `不算。<b>阶梯档位</b>与<b>超课时</b>只按整节课的节数累计，拖堂那段时间单独按「延长课计价类型」的单价另算，不会把你顶进更高的一档。`,
+        go: { act: 'calc', text: '查看计费公式' },
+      },
+      {
+        q: '一学期从哪天算到哪天？',
+        a: `从<b>学期第一周的周一</b>起，往后数「总周数」周。它决定三件事：今天是第几周、这周是单周还是双周、以及「学期总览」统计的区间。<br>学期中途改这个日期，单双周会整体平移，历史记录本身不受影响。`,
+        go: { act: 'term', text: '设置学期' },
+      },
+    ],
+  },
 ];
 
 const GUIDE_STEPS = [
@@ -3061,6 +3101,7 @@ const GUIDE_STEPS = [
 ];
 
 const CHANGELOG = [
+  { v: '1.0.22', d: '2026-11-13', items: ['计费方案可以存多套，换学校、换算法一键切回', '方案能生成一段分享码发给同事，对方粘贴即用', '课时费页新增「学期总览」：整个学期的总额、按月分布、类型占比', '批量导入课表支持直接读 CSV 文件；帮助里补了「口径」问答'] },
   { v: '1.0.21', d: '2026-11-12', items: ['作息模板改为优先走实时线路，更新后不再被 CDN 缓存拖住'] },
   { v: '1.0.20', d: '2026-11-12', items: ['新增「补贴与扣款」：班主任津贴、监考费、代课费、缺勤扣款都能记账，一起算进月度总额', '可设「每月固定」或「只这一次」，一次性款项不会跟着月份重复', '月报和导出的表格里也会带上这些条目', '作息模板可以联网更新，以后新增学段或地区作息不用等新版本'] },
   { v: '1.0.19', d: '2026-11-12', items: ['课时费页新增「月账单」：一键复制成文字，或导出表格（Excel / WPS 直接打开）', '作息表可一键套用初中 / 高中 / 小学三套常见时间', '已经有课排在第 9 节时，套用短作息会被拦下，避免时间算错'] },
@@ -4277,7 +4318,8 @@ function openImportSheet() {
         <div class="field-label">粘贴内容 <span class="hint">可从 Excel 直接复制</span></div>
         <textarea class="input" id="impText" rows="9" placeholder="${esc(sample)}"></textarea>
       </div>
-      <div class="hstack">
+      <div class="hstack" style="gap:8px;flex-wrap:wrap">
+        <button class="btn ghost sm" data-act="imp-file">${ic('upload', 14)} 读文件</button>
         <button class="btn outline sm" data-act="imp-sample">填入示例</button>
         <button class="btn ghost sm" data-act="imp-clear">清空</button>
       </div>
@@ -4586,9 +4628,453 @@ function openCalcRules() {
         <div class="switch ${s.useClassFactor ? 'on' : ''}" data-act="toggle-class-factor"></div>
         ${ic('right', 15)}
       </div>
+      <div class="field-label">我的方案 <span class="hint">换学校、换算法时一键切回</span></div>
+      <div class="rows" style="background:#F7F9FC;border-radius:14px">
+        ${(state.schemes || []).map(x => `
+          <div class="row" data-act="scheme-open" data-id="${esc(x.id)}" style="padding:12px 13px">
+            <div class="rc">
+              <div class="t" style="font-size:14px">${esc(x.name)}</div>
+              <div class="s">${esc(schemeSummary(x.snap))}</div>
+            </div>
+            ${s.activeScheme === x.id ? `<span style="color:var(--brand)">${ic('check', 18)}</span>` : ic('right', 15)}
+          </div>`).join('')}
+        ${(state.schemes || []).length ? '' : '<div class="help-note" style="margin:0;padding:12px 13px">还没有保存的方案。把常用的一套存下来，换学校或换算法时一键切回。</div>'}
+        <div class="row" data-act="scheme-save" style="padding:12px 13px;border-top:1px solid var(--line-2)">
+          <div class="ri" style="background:var(--violet-soft);color:var(--violet)">${ic('doc', 16)}</div>
+          <div class="rc"><div class="t" style="font-size:14px">把当前设置存成方案</div><div class="s">起个名字，以后一键切换</div></div>
+          ${ic('right', 15)}
+        </div>
+        <div class="row" data-act="scheme-share" style="padding:12px 13px;border-top:1px solid var(--line-2)">
+          <div class="ri" style="background:var(--brand-soft);color:var(--brand)">${ic('upload', 16)}</div>
+          <div class="rc"><div class="t" style="font-size:14px">发给同事</div><div class="s">复制一段码，对方粘贴即用</div></div>
+          ${ic('right', 15)}
+        </div>
+        <div class="row" data-act="scheme-import" style="padding:12px 13px;border-top:1px solid var(--line-2)">
+          <div class="ri" style="background:var(--mint-soft);color:var(--mint)">${ic('download', 16)}</div>
+          <div class="rc"><div class="t" style="font-size:14px">粘贴同事的分享码</div><div class="s">导入前先给你看这份配置</div></div>
+          ${ic('right', 15)}
+        </div>
+      </div>
       <div style="height:6px"></div>
     `,
     footer: `<button class="btn ghost" data-close>关闭</button><button class="btn" data-act="save-calc-rules">保存设置</button>`,
+  });
+}
+
+/* ---------- 计费方案：保存多套、分享给同事 ---------- */
+let shareDraft = null;      // 导入时解析出来的方案，确认后才应用
+
+/** 把当前计费设置拍成一份快照（课程类型一并带上，否则单价丢了） */
+function snapshotScheme() {
+  const s = state.settings;
+  return {
+    scheme: s.scheme,
+    useClassFactor: !!s.useClassFactor,
+    classFactors: (s.classFactors || []).map(x => ({ key: x.key, factor: Number(x.factor) || 1 })),
+    tiers: (s.tiers || []).map(t => ({ upTo: Number(t.upTo) || 0, price: Number(t.price) || 0 })),
+    overtimeFrom: Number(s.overtimeFrom) || 0,
+    overtimeRate: Number(s.overtimeRate) || 1,
+    extendTypeId: s.extendTypeId || 'self',
+    types: (state.types || []).filter(t => t.enabled !== false).map(t => ({ ...t })),
+  };
+}
+
+/**
+ * 应用快照：课程类型按 id 合并，本地多出来的类型保留。
+ * 直接整体替换会让老课表里的 typeId 找不到类型，金额会悄悄变成第一种课的钱。
+ */
+function applySchemeSnapshot(snap) {
+  if (!snap) return;
+  const s = state.settings;
+  s.scheme = ['standard', 'tiered', 'overtime'].includes(snap.scheme) ? snap.scheme : 'standard';
+  s.useClassFactor = !!snap.useClassFactor;
+  s.classFactors = (snap.classFactors || []).slice(0, 20);
+  s.tiers = (snap.tiers || []).slice(0, 6);
+  s.overtimeFrom = Number(snap.overtimeFrom) || 0;
+  s.overtimeRate = Number(snap.overtimeRate) || 1;
+  s.extendTypeId = snap.extendTypeId || 'self';
+
+  (snap.types || []).forEach(t => {
+    if (!t || !t.id) return;
+    const hit = state.types.find(x => x.id === t.id);
+    const clean = {
+      id: t.id, name: String(t.name || '未命名').slice(0, 12),
+      unit: ['period', 'hour', 'student'].includes(t.unit) ? t.unit : 'period',
+      price: Number(t.price) || 0,
+      factor: Number(t.factor) || 1,
+      color: /^#[0-9a-fA-F]{6}$/.test(String(t.color)) ? t.color : '#3B5BFD',
+      tierable: !!t.tierable, enabled: true,
+    };
+    if (hit) Object.assign(hit, clean);
+    else state.types.push(clean);
+  });
+}
+
+/* 分享码：紧凑字段 + base64url，便于在微信里当成一段文字传 */
+function b64urlEncode(str) {
+  const bytes = new TextEncoder().encode(str);
+  let bin = '';
+  bytes.forEach(b => { bin += String.fromCharCode(b); });
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function b64urlDecode(str) {
+  const t = String(str).replace(/-/g, '+').replace(/_/g, '/');
+  const bin = atob(t);
+  return new TextDecoder().decode(Uint8Array.from(bin, c => c.charCodeAt(0)));
+}
+
+function shareCodeOf(snap, name) {
+  const payload = {
+    t: 's', v: 1, n: String(name || '').slice(0, 12),
+    sc: snap.scheme,
+    cf: snap.useClassFactor ? 1 : 0,
+    kf: snap.classFactors.map(x => [x.key, x.factor]),
+    ti: snap.tiers.map(t => [t.upTo, t.price]),
+    of: snap.overtimeFrom,
+    or: snap.overtimeRate,
+    et: snap.extendTypeId,
+    ty: snap.types.map(t => [t.id, t.name, t.unit, t.price, t.factor, t.color, t.tierable ? 1 : 0]),
+  };
+  return 'KB1-' + b64urlEncode(JSON.stringify(payload));
+}
+
+/** 解析分享码；格式不对就抛错，交给界面提示 */
+function parseShareCode(code) {
+  const txt = String(code || '').trim().replace(/\s+/g, '');
+  if (!/^KB1-/.test(txt)) throw new Error('不是课酬的分享码');
+  let o;
+  try {
+    o = JSON.parse(b64urlDecode(txt.slice(4)));
+  } catch (e) {
+    throw new Error('这串码不完整，可能复制时被截断了');
+  }
+  if (!o || o.t !== 's' || o.v !== 1) throw new Error('分享码版本不对');
+  return {
+    name: String(o.n || '同事的方案').slice(0, 12),
+    scheme: o.sc,
+    useClassFactor: !!o.cf,
+    classFactors: (o.kf || []).map(x => ({ key: String(x[0]).slice(0, 8), factor: Number(x[1]) || 1 })),
+    tiers: (o.ti || []).map(x => ({ upTo: Number(x[0]) || 0, price: Number(x[1]) || 0 })),
+    overtimeFrom: Number(o.of) || 0,
+    overtimeRate: Number(o.or) || 1,
+    extendTypeId: o.et || 'self',
+    types: (o.ty || []).map(t => ({
+      id: String(t[0]), name: String(t[1] || '').slice(0, 12),
+      unit: t[2], price: Number(t[3]) || 0, factor: Number(t[4]) || 1,
+      color: t[5], tierable: !!t[6], enabled: true,
+    })),
+  };
+}
+
+function schemeSummary(snap) {
+  return `${schemeName(snap.scheme)} · ${snap.types.length} 个类型`
+    + `${snap.useClassFactor ? ` · ${snap.classFactors.length} 条班级系数` : ''}`;
+}
+
+function openSchemeSave() {
+  openSheet({
+    title: '保存为方案',
+    body: `
+      <div class="field">
+        <div class="field-label">方案名称</div>
+        <input class="input" id="schemeName" maxlength="12"
+               placeholder="如 本校 2026 秋季" value="${esc(`方案 ${(state.schemes || []).length + 1}`)}">
+      </div>
+      <div class="help-note">保存后会记住当前的计费公式、课程类型单价、班级系数、阶梯与超课时设置。以后换回来就是一键的事。</div>
+    `,
+    footer: `<button class="btn ghost" data-close>取消</button><button class="btn" data-act="scheme-save-ok">保存</button>`,
+  });
+}
+
+function saveSchemeNow() {
+  const name = (($('#schemeName') || {}).value || '').trim();
+  if (!name) { toast('给方案起个名字'); return; }
+  state.schemes = state.schemes || [];
+  const id = uid();
+  state.schemes.push({ id, name: name.slice(0, 12), at: Date.now(), snap: snapshotScheme() });
+  state.settings.activeScheme = id;
+  save();
+  closeSheet();
+  render();
+  toast('方案已保存', 'check');
+}
+
+function openSchemeSheet(id) {
+  const hit = (state.schemes || []).find(x => x.id === id);
+  if (!hit) return;
+  const on = state.settings.activeScheme === id;
+  openSheet({
+    title: hit.name,
+    body: `
+      <div class="help-note" style="margin-top:0">${esc(schemeSummary(hit.snap))}</div>
+      <div class="rows" style="background:#F7F9FC;border-radius:14px;margin-top:12px">
+        ${hit.snap.types.map(t => `
+          <div class="row" style="padding:10px 13px">
+            <div class="rc"><div class="t" style="font-size:13.5px">${esc(t.name)}</div></div>
+            <div class="rv">${money(t.price)}<span class="tiny muted">/${t.unit === 'hour' ? '时' : t.unit === 'student' ? '人' : '节'}</span></div>
+          </div>`).join('')}
+      </div>
+      <button class="btn outline" data-act="scheme-share-one" data-id="${esc(id)}" style="margin-top:14px">${ic('upload', 16)} 复制分享码</button>
+      <button class="danger-link" style="margin-top:14px" data-act="scheme-del" data-id="${esc(id)}">删除这个方案</button>
+    `,
+    footer: `<button class="btn ghost" data-close>关闭</button>
+      <button class="btn" data-act="scheme-apply" data-id="${esc(id)}" ${on ? 'disabled' : ''}>${on ? '当前正在用' : '应用这套方案'}</button>`,
+  });
+}
+
+function applySchemeById(id) {
+  const hit = (state.schemes || []).find(x => x.id === id);
+  if (!hit) return;
+  applySchemeSnapshot(hit.snap);
+  state.settings.activeScheme = id;
+  save();
+  closeSheet();
+  render();
+  toast(`已应用「${hit.name}」`, 'check');
+}
+
+function deleteSchemeById(id) {
+  const hit = (state.schemes || []).find(x => x.id === id);
+  if (!hit) return;
+  confirmModal({
+    title: `删除「${hit.name}」`,
+    desc: '只删这份保存的方案，当前正在使用的计费设置不受影响。',
+    okText: '删除',
+    danger: true,
+    onDone: ok => {
+      if (!ok) return;
+      state.schemes = state.schemes.filter(x => x.id !== id);
+      if (state.settings.activeScheme === id) state.settings.activeScheme = '';
+      save();
+      closeSheet();
+      render();
+      toast('已删除');
+    },
+  });
+}
+
+function openSchemeShare(id) {
+  const hit = id ? (state.schemes || []).find(x => x.id === id) : null;
+  const snap = hit ? hit.snap : snapshotScheme();
+  const name = hit ? hit.name : (state.teacher.name || '我的方案');
+  const code = shareCodeOf(snap, name);
+  openSheet({
+    title: '分享给同事',
+    body: `
+      <div class="help-note" style="margin-top:0">把下面这段发给同事，他在「我的方案 → 粘贴分享码」里贴进去，就能得到和你一样的算法与单价。</div>
+      <textarea class="input" id="shareOut" readonly
+        style="min-height:132px;font-size:11px;line-height:1.7;white-space:pre-wrap;word-break:break-all;font-family:ui-monospace,Menlo,Consolas,monospace">${esc(code)}</textarea>
+      <div class="tiny muted" style="margin-top:8px">共 ${code.length} 个字符 · 只含计费设置，不含任何课表和姓名</div>
+    `,
+    footer: `<button class="btn ghost" data-close>关闭</button><button class="btn" data-act="scheme-copy">复制分享码</button>`,
+  });
+}
+
+function openSchemeImport() {
+  shareDraft = null;
+  renderSchemeImport();
+}
+
+function renderSchemeImport() {
+  const d = shareDraft;
+  openSheet({
+    title: '粘贴分享码',
+    body: d ? `
+      <div class="help-note" style="margin-top:0">解析成功，确认后再应用。</div>
+      <div class="rows" style="background:#F7F9FC;border-radius:14px;margin-top:12px">
+        <div class="row" style="padding:12px 13px">
+          <div class="rc"><div class="t" style="font-size:14px">${esc(d.name)}</div>
+            <div class="s">${esc(schemeSummary(d))}</div></div>
+        </div>
+        ${d.types.map(t => `
+          <div class="row" style="padding:10px 13px;border-top:1px solid var(--line-2)">
+            <div class="rc"><div class="t" style="font-size:13.5px">${esc(t.name)}</div></div>
+            <div class="rv">${money(t.price)}</div>
+          </div>`).join('')}
+      </div>
+      <div class="help-note">应用后会覆盖当前的计费公式与同名课程类型的单价；你本地多出来的课程类型会保留。</div>
+    ` : `
+      <div class="help-note" style="margin-top:0">把同事发来的那串「KB1-…」整段贴进来。</div>
+      <textarea class="input" id="shareIn" placeholder="KB1-..."
+        style="min-height:132px;font-size:11px;line-height:1.7;white-space:pre-wrap;word-break:break-all;font-family:ui-monospace,Menlo,Consolas,monospace"></textarea>
+    `,
+    footer: d
+      ? `<button class="btn ghost" data-act="scheme-import-back">重填</button><button class="btn" data-act="scheme-import-ok">应用</button>`
+      : `<button class="btn ghost" data-close>取消</button><button class="btn" data-act="scheme-import-parse">解析</button>`,
+  });
+}
+
+function parseShareInput() {
+  const raw = (($('#shareIn') || {}).value || '').trim();
+  if (!raw) { toast('先把分享码贴上'); return; }
+  try {
+    shareDraft = parseShareCode(raw);
+    renderSchemeImport();
+  } catch (e) {
+    toast(e && e.message ? e.message : '解析失败');
+  }
+}
+
+function applyShareInput() {
+  if (!shareDraft) return;
+  const name = shareDraft.name || '同事的方案';
+  state.schemes = state.schemes || [];
+  const id = uid();
+  state.schemes.push({ id, name, at: Date.now(), snap: { ...shareDraft, name: undefined } });
+  applySchemeSnapshot(shareDraft);
+  state.settings.activeScheme = id;
+  save();
+  closeSheet();
+  render();
+  toast(`已导入「${name}」`, 'check');
+}
+
+/* ---------- 学期报表 ---------- */
+/** 学期区间：从学期第一周周一算起 termWeeks 周 */
+function termRange() {
+  const start = termStartYmd();
+  const weeks = clamp(Number(state.settings.termWeeks) || 20, 1, 30);
+  const end = ymd(addDays(parseYmd(start), weeks * 7 - 1));
+  const months = [];
+  let cur = start.slice(0, 7);
+  const last = end.slice(0, 7);
+  let guard = 0;
+  while (cur <= last && guard++ < 24) {
+    months.push(cur);
+    cur = shiftMonth(cur, 1);
+  }
+  return { start, end, weeks, months };
+}
+
+/** 逐月汇总成整学期；补贴/扣款按各自月份累加 */
+function calcTerm() {
+  const { start, end, weeks, months } = termRange();
+  const per = months.map(ym => ({ ym, m: calcMonth(ym) }));
+  let total = 0, lessonTotal = 0, doneFee = 0, planFee = 0;
+  let count = 0, doneCount = 0, km = 0, extraAdd = 0, extraSub = 0;
+  const byType = new Map();
+
+  per.forEach(({ m }) => {
+    total = round2(total + m.total);
+    lessonTotal = round2(lessonTotal + m.lessonTotal);
+    doneFee = round2(doneFee + m.doneFee);
+    planFee = round2(planFee + m.planFee);
+    count += m.count;
+    doneCount += m.doneCount;
+    km = round2(km + m.km);
+    extraAdd = round2(extraAdd + m.extraAdd);
+    extraSub = round2(extraSub + m.extraSub);
+    m.byType.forEach(t => {
+      if (!byType.has(t.id)) byType.set(t.id, { id: t.id, name: t.name, color: t.color, fee: 0, count: 0 });
+      const b = byType.get(t.id);
+      b.fee = round2(b.fee + t.fee);
+      b.count += t.count;
+    });
+  });
+
+  return {
+    start, end, weeks, months, per,
+    total, lessonTotal, doneFee, planFee, count, doneCount, km, extraAdd, extraSub,
+    byType: [...byType.values()].sort((a, b) => b.fee - a.fee),
+  };
+}
+
+function termStatementText() {
+  const t = calcTerm();
+  const who = [state.teacher.school, state.teacher.name, state.teacher.subject].filter(Boolean).join(' · ');
+  const L = [];
+  L.push(`课酬学期报表 · ${t.start} 至 ${t.end}`);
+  if (who) L.push(who);
+  L.push('');
+  L.push(`学期总课酬　${money(t.total)}`);
+  if (t.extraAdd || t.extraSub) {
+    L.push(`　课时费　　${money(t.lessonTotal)}`);
+    if (t.extraAdd) L.push(`　补贴　　　+${money(t.extraAdd)}`);
+    if (t.extraSub) L.push(`　扣款　　　−${money(t.extraSub)}`);
+  }
+  L.push(`课时　　　　${t.count} 节（已完成 ${t.doneCount} 节，待上 ${t.count - t.doneCount} 节）`);
+  L.push(`折合课时　　${t.km} 节（按 45 分钟折算）`);
+  L.push('');
+  L.push('按月');
+  t.per.forEach(({ ym, m }) => {
+    L.push(`　${monthLabel(ym)}　${String(m.count).padStart(2, ' ')} 节　${money(m.total)}`);
+  });
+  if (t.byType.length) {
+    L.push('');
+    L.push('按类型');
+    t.byType.forEach(x => L.push(`　${x.name}　${x.count} 节　${money(x.fee)}`));
+  }
+  L.push('');
+  L.push(`生成于 ${todayYmd()} · 课酬`);
+  return L.join('\n');
+}
+
+function openTermReport() {
+  const t = calcTerm();
+  const maxFee = Math.max(1, ...t.byType.map(x => x.fee));
+  openSheet({
+    title: '学期总览',
+    body: `
+      <div class="help-note" style="margin-top:0">${t.start} 至 ${t.end} · 共 ${t.weeks} 周</div>
+
+      <div class="card" style="background:linear-gradient(150deg,#1E2F80,#2C43C4 55%,#3B5BFD);margin-top:12px">
+        <div style="color:#fff">
+          <div style="font-size:12.5px;opacity:.8;display:flex;justify-content:space-between">
+            <span>学期总课酬</span><span>${t.count} 节课 · ${t.km} 标准课时</span>
+          </div>
+          <div style="display:flex;align-items:flex-end;gap:6px;margin-top:6px">
+            <span style="font-size:19px;font-weight:700;padding-bottom:7px;opacity:.9">¥</span>
+            <span class="num" style="font-size:38px;font-weight:800;letter-spacing:-1.2px;line-height:1">${splitMoney(t.total).int}</span>
+            ${splitMoney(t.total).dec === '00' ? '' : `<span class="num" style="font-size:17px;font-weight:700;padding-bottom:4px;opacity:.85">.${splitMoney(t.total).dec}</span>`}
+          </div>
+          <div style="display:flex;gap:18px;margin-top:14px;padding-top:13px;border-top:1px solid rgba(255,255,255,.16);font-size:12px">
+            <div><div style="opacity:.7">已结课</div><div class="num" style="font-size:15px;font-weight:700;margin-top:2px">${money(t.doneFee)}</div></div>
+            <div><div style="opacity:.7">待上课</div><div class="num" style="font-size:15px;font-weight:700;margin-top:2px">${money(t.planFee)}</div></div>
+            <div><div style="opacity:.7">完成</div><div class="num" style="font-size:15px;font-weight:700;margin-top:2px">${t.count ? Math.round(t.doneCount / t.count * 100) : 0}%</div></div>
+          </div>
+        </div>
+      </div>
+
+      ${t.extraAdd || t.extraSub ? `
+        <div class="rows" style="background:#F7F9FC;border-radius:14px;margin-bottom:14px">
+          <div class="row" style="padding:11px 13px">
+            <div class="rc"><div class="t" style="font-size:13.5px">课时费</div></div>
+            <div class="rv">${money(t.lessonTotal)}</div>
+          </div>
+          ${t.extraAdd ? `<div class="row" style="padding:11px 13px;border-top:1px solid var(--line-2)">
+            <div class="rc"><div class="t" style="font-size:13.5px">补贴</div></div>
+            <div class="rv" style="color:var(--mint)">+${money(t.extraAdd)}</div></div>` : ''}
+          ${t.extraSub ? `<div class="row" style="padding:11px 13px;border-top:1px solid var(--line-2)">
+            <div class="rc"><div class="t" style="font-size:13.5px">扣款</div></div>
+            <div class="rv" style="color:var(--rose)">−${money(t.extraSub)}</div></div>` : ''}
+        </div>` : ''}
+
+      <div class="field-label">按月</div>
+      <div class="rows" style="background:#F7F9FC;border-radius:14px;margin-bottom:14px">
+        ${t.per.map(({ ym, m }, i) => `
+          <div class="row" style="padding:11px 13px${i ? ';border-top:1px solid var(--line-2)' : ''}">
+            <div class="rc">
+              <div class="t" style="font-size:13.5px">${monthLabel(ym)}</div>
+              <div class="s">${m.count} 节${m.doneCount !== m.count ? ` · 待上 ${m.count - m.doneCount}` : ''}</div>
+            </div>
+            <div class="rv">${money(m.total)}</div>
+          </div>`).join('')}
+      </div>
+
+      ${t.byType.length ? `
+        <div class="field-label">按类型</div>
+        <div class="card" style="box-shadow:none;border:1px solid var(--line);padding:14px 16px">
+          ${t.byType.map(x => `
+            <div class="sb-item" style="margin-bottom:12px">
+              <div class="sb-top">
+                <span class="nm"><i class="tick" style="background:${x.color};width:8px;height:8px;border-radius:3px"></i>${esc(x.name)}</span>
+                <span class="vl">${money(x.fee)}<small>${x.count} 节</small></span>
+              </div>
+              <div class="sb-track"><div class="sb-fill" style="width:${Math.max(3, (x.fee / maxFee) * 100)}%;background:${x.color}"></div></div>
+            </div>`).join('')}
+        </div>` : ''}
+    `,
+    footer: `<button class="btn ghost" data-close>关闭</button><button class="btn" data-act="term-copy">复制报表</button>`,
   });
 }
 
@@ -5713,19 +6199,65 @@ function renderScheduleIOAfterCapture() {
 }
 
 /** 读本地 txt/csv 到文本框 */
+/** Excel 另存为 CSV 后常见的小毛病：BOM、外层引号、空行，先抹平 */
+function normalizeCsvText(raw) {
+  let t = String(raw || '').replace(/^\ufeff/, '');
+  t = t.split(/\r?\n/).map(line => {
+    if (!/"/.test(line)) return line;
+    return line.replace(/"([^"]*)"/g, (m, inner) => inner.replace(/""/g, '"'));
+  }).join('\n');
+  return t.split('\n').filter(l => l.replace(/[\s,，\t|]/g, '') !== '').join('\n');
+}
+
+/** .xlsx/.xls 是压缩包，纯前端解得先引入解压库，这里如实告知而不是假装读成功 */
+function isExcelBinary(name) {
+  return /\.(xlsx|xls|xlsm)$/i.test(String(name || ''));
+}
+
 function pickScheduleFile() {
   const input = document.createElement('input');
   input.type = 'file';
-  input.accept = 'text/plain,.txt,.csv,.md,text/*';
+  input.accept = 'text/plain,.txt,.csv,.tsv,.md,text/*';
   input.onchange = () => {
     const file = input.files && input.files[0];
     if (!file) return;
+    if (isExcelBinary(file.name)) {
+      toast('Excel 文件请另存为 CSV，或直接复制单元格粘贴');
+      return;
+    }
     const reader = new FileReader();
     reader.onload = () => {
-      ieText = String(reader.result || '');
+      ieText = normalizeCsvText(reader.result);
       ieTab = 'import';
       renderScheduleIO();
       toast('已读入文本，检查无误后点「导入」', 'check');
+    };
+    reader.onerror = () => toast('文件读取失败');
+    reader.readAsText(file);
+  };
+  input.click();
+}
+
+/** 批量导入面板里读文件：读进来直接填到文本框并解析 */
+function pickImportFile() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'text/plain,.txt,.csv,.tsv,.md,text/*';
+  input.onchange = () => {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    if (isExcelBinary(file.name)) {
+      toast('Excel 请另存为 CSV，或直接复制单元格粘贴');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const ta = $('#impText');
+      if (!ta) return;
+      ta.value = normalizeCsvText(reader.result);
+      draftImport = null;
+      $('#impBtn') && $('#impBtn').click();
+      toast(`已读入 ${file.name}`, 'check');
     };
     reader.onerror = () => toast('文件读取失败');
     reader.readAsText(file);
@@ -6012,6 +6544,7 @@ document.addEventListener('click', e => {
 
     /* 导入 */
     case 'open-import': openImportSheet(); break;
+    case 'imp-file': pickImportFile(); break;
     case 'imp-sample': {
       const t = $('#impText');
       t.value = `周一 第1节 高一(3)班 正课
@@ -6268,6 +6801,26 @@ document.addEventListener('click', e => {
     /* 月账单：复制文字 / 导出表格 */
     case 'stmt-copy': copyMonthStatement(); break;
     case 'stmt-csv': exportMonthStatement(); break;
+    case 'term-report': openTermReport(); break;
+    case 'term-copy': copyText(termStatementText(), '学期报表已复制'); break;
+
+    /* 计费方案 */
+    case 'scheme-open': openSchemeSheet(el.dataset.id); break;
+    case 'scheme-save': openSchemeSave(); break;
+    case 'scheme-save-ok': saveSchemeNow(); break;
+    case 'scheme-apply': applySchemeById(el.dataset.id); break;
+    case 'scheme-del': deleteSchemeById(el.dataset.id); break;
+    case 'scheme-share': openSchemeShare(); break;
+    case 'scheme-share-one': openSchemeShare(el.dataset.id); break;
+    case 'scheme-copy': {
+      const ta = $('#shareOut');
+      copyText(ta ? ta.value : '', '分享码已复制');
+      break;
+    }
+    case 'scheme-import': openSchemeImport(); break;
+    case 'scheme-import-parse': parseShareInput(); break;
+    case 'scheme-import-ok': applyShareInput(); break;
+    case 'scheme-import-back': shareDraft = null; renderSchemeImport(); break;
 
     /* 补贴与扣款 */
     case 'extra-add': openExtraSheet(); break;

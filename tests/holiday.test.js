@@ -123,8 +123,11 @@ ok(!$(w, '#sheetBody .hd-row[data-date="2026-12-31"]'), '列表已移除');
 
 console.log('\n【7】铺课表：放假当天不排课');
 resetTerm();
+// 用「下周」的日期，保证一定在今天之后：本测试在任意星期几跑都成立
+S().settings.termWeeks = 3;
+const nextMon = api.ymd(api.addDays(api.parseYmd(api.ymd(api.startOfWeek(new Date()))), 7));
 const today = api.todayYmd();
-const thu = api.ymd(api.addDays(api.parseYmd(api.ymd(api.startOfWeek(new Date()))), 3));   // 本周四
+const thu = api.ymd(api.addDays(api.parseYmd(nextMon), 3));   // 下周四
 api.masterPut(4, 1, 'all', { typeId: 'regular', klass: '高一(3)班' });
 api.masterPut(4, 7, 'all', { typeId: 'regular', klass: '高一(3)班' });
 let r = api.syncFromMaster(false);
@@ -139,7 +142,8 @@ ok(api.holidayBlocks(thu, 1) === true, 'holidayBlocks 判定为阻断');
 
 console.log('\n【8】半天：只排到放学时刻');
 resetTerm();
-const fri = api.ymd(api.addDays(api.parseYmd(api.ymd(api.startOfWeek(new Date()))), 4));   // 本周五
+S().settings.termWeeks = 3;
+const fri = api.ymd(api.addDays(api.parseYmd(api.ymd(api.addDays(api.parseYmd(api.ymd(api.startOfWeek(new Date()))), 7))), 4));   // 下周五
 api.masterPut(5, 1, 'all', { typeId: 'regular', klass: '高二(2)班' });
 api.masterPut(5, 7, 'all', { typeId: 'regular', klass: '高二(2)班' });
 setHoliday(fri, 'off', { half: '10:00', name: '中秋' });
@@ -151,7 +155,8 @@ ok(api.holidayBlocks(fri, 1) === false && api.holidayBlocks(fri, 7) === true, '�
 
 console.log('\n【9】补班日：按指定星期的课表上课');
 resetTerm();
-const sat = api.ymd(api.addDays(api.parseYmd(api.ymd(api.startOfWeek(new Date()))), 5));   // 本周六
+S().settings.termWeeks = 3;
+const sat = api.ymd(api.addDays(api.parseYmd(api.ymd(api.addDays(api.parseYmd(api.ymd(api.startOfWeek(new Date()))), 7))), 5));   // 下周六
 api.masterPut(5, 2, 'all', { typeId: 'tutor', klass: '竞赛班' });
 setHoliday(sat, 'work', { asDow: 5, name: '国庆后补班' });
 api.syncFromMaster(false);
