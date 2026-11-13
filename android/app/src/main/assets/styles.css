@@ -1008,7 +1008,8 @@ input, textarea, select { outline: none; }
 .sheet-title { font-size: 17px; font-weight: 750; letter-spacing: -.3px; }
 .sheet-body {
   overflow-y: auto;
-  padding: 0 20px;
+  /* 底部留一点余量：内容超出时最后一行不会正好贴着按钮区，看着像被切掉 */
+  padding: 0 20px 10px;
   -webkit-overflow-scrolling: touch;
   flex: 1 1 auto;
   min-height: 0;

@@ -3117,7 +3117,7 @@ function renderMine() {
 /* ============================================================
    帮助 · 说明 · 关于
    ============================================================ */
-const APP_VERSION = '1.1.0';
+const APP_VERSION = '1.1.1';
 const APP_BUILD = '2026-11-12';
 
 let helpTab = 'faq';                       // faq | guide | about
@@ -3306,6 +3306,7 @@ const GUIDE_STEPS = [
 ];
 
 const CHANGELOG = [
+  { v: '1.1.1', d: '2026-11-13', items: ['同步页的提示说准了：能分清是安装包旧了还是网络不通', '安装包落后时会直接给「更新安装包」按钮，不用自己去翻', '修掉面板底部说明被按钮挡住一截的问题'] },
   { v: '1.1.0', d: '2026-11-13', items: ['多设备同步更稳了：修掉部分机型一直扫不到对方的毛病，配对时页面不再卡住', '启动时自动体检数据，发现异常当场修正并告诉你改了什么', '课表、金额、作息这些算得不对的老问题，多半是历史数据坏了，现在会被兜住', '同步包和导入的文件若来自别的版本，也只修不丢'] },
   { v: '1.0.23', d: '2026-11-13', items: ['课表可以直接从 .xlsx 导入，不用再另存为 CSV', 'Excel 里的日期列会自动认出来；表头上方有标题行也没关系', '老式 .xls 仍不支持，会提示另存为 .xlsx 或 CSV'] },
   { v: '1.0.22', d: '2026-11-13', items: ['计费方案可以存多套，换学校、换算法一键切回', '方案能生成一段分享码发给同事，对方粘贴即用', '课时费页新增「学期总览」：整个学期的总额、按月分布、类型占比', '批量导入课表支持直接读 CSV 文件；帮助里补了「口径」问答'] },
@@ -5720,10 +5721,34 @@ let lanTimer = 0;
 let pendSyncPkt = null;
 let lastSyncStats = null;
 
+/**
+ * 探测当前安装包提供了哪些原生能力。
+ *
+ * 这里必须分情况：网页资源能热更新，安装包不能——
+ * 于是会出现「界面是新版、APK 还是旧版」的错配，旧 APK 里没有新加的桥接方法。
+ * 直接说「网页版没有局域网能力」会让人以为装错了应用，所以要把两件事分开讲。
+ */
+let __niCache = null, __niOwner = null;
+function nativeInfo() {
+  const n = window.Native;
+  if (__niCache && __niOwner === n) return __niCache;
+
+  let out = { native: false, version: '', lan: false, missing: [] };
+  if (n) {
+    let version = '';
+    try { version = String(n.version() || ''); } catch (e) { version = ''; }
+    // 局域网要三个方法配合才转得起来，缺一个就是「点了没反应」
+    const need = ['lanStart', 'lanScanStart', 'lanSyncStart', 'lanInbox'];
+    const missing = need.filter(k => typeof n[k] !== 'function');
+    out = { native: true, version, lan: missing.length === 0, missing };
+  }
+  __niCache = out;
+  __niOwner = n;
+  return out;
+}
+
 function hasLan() {
-  try {
-    return !!(window.Native && typeof window.Native.lanStart === 'function');
-  } catch (e) { return false; }
+  try { return nativeInfo().lan; } catch (e) { return false; }
 }
 
 /** 「我的」页那一行的副标题 */
@@ -5744,7 +5769,21 @@ function syncWhenText() {
 }
 
 function lanBodyHtml() {
-  if (!hasLan()) {
+  const ni = nativeInfo();
+
+  // 在手机里，但安装包比网页旧：热更新只换网页，换不了 APK
+  if (ni.native && !ni.lan) {
+    return `
+      <div class="help-note" style="margin-top:0">
+        这个安装包（${esc(ni.version || '未知版本')}）还不支持局域网直传。<br>
+        界面已经是新版的，但直传要用到安装包里的新代码，<b>更新一下就能用</b>。
+      </div>
+      <button class="btn outline" data-act="sync-update" style="margin-top:10px">${ic('download', 16)} 更新安装包</button>
+      <div class="tiny muted" style="margin-top:8px">暂时可以先用下面的「用文件同步」，效果一样，只是要多传一次文件。</div>`;
+  }
+
+  // 真的是在浏览器里打开
+  if (!ni.native) {
     return `<div class="help-note">网页版没有局域网能力。装到手机上就能用「同一 WiFi 直接传」，不用数据线也不用网盘。</div>`;
   }
   if (!lanInfo.on) {
@@ -8197,6 +8236,10 @@ document.addEventListener('click', e => {
     case 'lan-start': lanStart(); break;
     case 'lan-stop': lanStop(); break;
     case 'lan-scan': lanScan(); break;
+    case 'sync-update':
+      closeSheet();
+      setTimeout(() => checkUpdate(false), 120);
+      break;
     case 'lan-ask': lanAskCode(el); break;
     case 'lan-go': lanGo(); break;
     case 'lan-back': lanTarget = null; openSyncSheet(); break;

@@ -1,19 +1,18 @@
 {
-  "versionCode": 27,
-  "versionName": "1.1.0",
+  "versionCode": 28,
+  "versionName": "1.1.1",
   "notes": [
-    "多设备同步更稳了：修掉部分机型一直扫不到对方的毛病",
-    "配对时页面不再卡住，可以边等边看进度",
-    "启动时自动体检数据，发现异常会当场修正并告诉改了什么",
-    "同步别人的包、导入旧文件，坏了也只修不丢"
+    "同步页的提示说准了：能分清是安装包旧了还是网络不通",
+    "安装包落后时直接给「更新安装包」按钮，装完就能用局域网直传",
+    "修掉面板底部说明被按钮挡住一截的问题"
   ],
   "apk": {
-    "url": "https://github.com/user269/kechou/releases/download/v1.1.0/kebao-1.1.0.apk",
-    "size": 410870,
+    "url": "https://github.com/user269/kechou/releases/download/v1.1.1/kebao-1.1.1.apk",
+    "size": 414967,
     "mirrors": [
-      "https://ghfast.top/https://github.com/user269/kechou/releases/download/v1.1.0/kebao-1.1.0.apk",
-      "https://gh-proxy.com/https://github.com/user269/kechou/releases/download/v1.1.0/kebao-1.1.0.apk",
-      "https://ghproxy.net/https://github.com/user269/kechou/releases/download/v1.1.0/kebao-1.1.0.apk"
+      "https://ghfast.top/https://github.com/user269/kechou/releases/download/v1.1.1/kebao-1.1.1.apk",
+      "https://gh-proxy.com/https://github.com/user269/kechou/releases/download/v1.1.1/kebao-1.1.1.apk",
+      "https://ghproxy.net/https://github.com/user269/kechou/releases/download/v1.1.1/kebao-1.1.1.apk"
     ]
   },
   "web": {
@@ -22,5 +21,5 @@
     "size": 0,
     "notes": []
   },
-  "updated": "2026-11-13T06:15:00Z"
+  "updated": "2026-11-13T07:08:06Z"
 }

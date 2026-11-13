@@ -34,6 +34,7 @@ window.__api = {
   save, trackChanges, collectEntities, stableKey, shortHash,
   buildSyncPacket, parseSyncPacket, mergeSyncPacket, deviceInfo, setDeviceName, pruneSyncMeta,
   openSyncSheet, lanStart, lanStop, lanScan, lanAskCode, lanGo, lanDrainInbox, hasLan, syncMineSub,
+  nativeInfo, lanBodyHtml,
   get lanInfo() { return lanInfo; },
   get lanPeers() { return lanPeers; },
   now() { return Date.now(); },
@@ -281,6 +282,8 @@ tick(); L2.save();
 const good = A.buildSyncPacket();
 wl2.Native = {
   lanStart: () => JSON.stringify({ ok: true, ip: '192.168.1.23', port: 8801 }),
+  lanScanStart: () => '{"ok":true}',
+  lanSyncStart: () => '{"ok":true}',
   lanInbox: () => JSON.stringify({ items: [
     { from: 'Xiaomi 14', packet: '{这不是 json' },     // 坏包，应被跳过
     { from: 'Xiaomi 14', packet: good },
@@ -303,6 +306,7 @@ wl3.Native = {
   lanSyncStart: () => 'not json',
   lanSyncPoll: () => 'not json',
   lanInbox: () => 'broken',
+  lanPublish: () => { },
   deviceName: () => '',
 };
 L3.openSyncSheet();
@@ -326,6 +330,7 @@ const L4 = wl4.__api;
 let called = 0;
 wl4.Native = {
   lanStart: () => JSON.stringify({ ok: true, ip: '192.168.1.23', port: 8801, code: '3847' }),
+  lanScanStart: () => '{"ok":true}',
   lanSyncStart: () => { called++; return '{"ok":true}'; },
   lanSyncPoll: () => '{"state":"idle"}',
   lanPublish: () => { },
@@ -341,6 +346,65 @@ ok(called === 0, '两位数字不发请求', called);
 inp.value = 'abcd';
 L4.lanGo();
 ok(called === 0, '非数字不发请求', called);
+
+console.log('\n【21】界面是新的、安装包是旧的（这次的线上问题）');
+const wOld = boot();
+const OLD = wOld.__api;
+// 旧 APK：有 Native（能存文件、能改名），但没有后来加的局域网方法
+wOld.Native = {
+  version: () => '1.0.23',
+  saveFileAs: () => { },
+  deviceName: () => 'V2302A',
+};
+const info = OLD.nativeInfo();
+ok(info.native === true, '认得出是在手机里跑', info);
+ok(info.lan === false, '局域网能力判定为不可用', info.lan);
+ok(info.missing.length === 4, '四个方法都缺', info.missing);
+ok(info.version === '1.0.23', '读到了安装包版本', info.version);
+
+const htmlOld = OLD.lanBodyHtml();
+ok(/1\.0\.23/.test(htmlOld), '提示里带上安装包版本');
+ok(/还不支持局域网直传/.test(htmlOld), '说清楚是安装包的问题');
+ok(/更新安装包/.test(htmlOld), '给了更新按钮');
+ok(!/网页版没有局域网能力/.test(htmlOld), '不再误报成「网页版」');
+
+OLD.openSyncSheet();
+const sheetTxt = (wOld.document.querySelector('#sheetBody') || {}).textContent || '';
+ok(/更新安装包/.test(sheetTxt), '面板里确实显示了更新入口');
+
+console.log('\n【22】真·浏览器打开时说「网页版」');
+const wWeb = boot();
+const WEB = wWeb.__api;
+ok(WEB.nativeInfo().native === false, '没有 Native', WEB.nativeInfo());
+ok(/网页版没有局域网能力/.test(WEB.lanBodyHtml()), '才是网页版文案');
+
+console.log('\n【23】能力齐全时说「开启接收」');
+const wOk = boot();
+const OK = wOk.__api;
+wOk.Native = {
+  version: () => '1.1.0',
+  lanStart: () => '{"ok":true,"ip":"1.2.3.4","port":1,"code":"0000"}',
+  lanScanStart: () => '{"ok":true}',
+  lanSyncStart: () => '{"ok":true}',
+  lanInbox: () => '{"items":[]}',
+  lanPublish: () => { },
+};
+ok(OK.nativeInfo().lan === true, '能力齐全');
+ok(/开启接收/.test(OK.lanBodyHtml()), '显示开启接收入口', OK.lanBodyHtml().slice(0, 40));
+
+console.log('\n【24】缺一个方法也要当成不可用（1.0.25 那种半新不旧的包）');
+const wHalf = boot();
+const HALF = wHalf.__api;
+wHalf.Native = {
+  version: () => '1.0.25',
+  lanStart: () => '{"ok":true}',      // 有 lanStart
+  lanInbox: () => '{"items":[]}',
+  lanSyncStart: () => '{"ok":true}',
+  // 少了 lanScanStart —— 点「查找」会静默失败
+};
+const halfInfo = HALF.nativeInfo();
+ok(halfInfo.lan === false, '缺一个就判不可用', halfInfo.missing);
+ok(halfInfo.missing.includes('lanScanStart'), '指出缺的是哪个', halfInfo.missing);
 
 }  // runTests
 
