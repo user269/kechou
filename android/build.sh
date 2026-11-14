@@ -24,11 +24,16 @@ OUT="build"
 KS="keystore.jks"
 # 签名密码不写进仓库：优先读环境变量，其次读本地 android/.keystore-pass
 KS_PASS="${KS_PASS:-$(cat .keystore-pass 2>/dev/null || true)}"
-# 版本号可由环境变量覆盖，用来从同一份代码产出两条线：
-#   1.3.x 带广告（默认）       bash build.sh
-#   1.2.x 无广告（维护线）      VERSION_NAME=1.2.1 VERSION_CODE=26 WITH_ADS=0 bash build.sh
-VERSION_NAME="${VERSION_NAME:-1.3.0b}"
-VERSION_CODE="${VERSION_CODE:-33}"
+# 版本号统一四段：主.次.修订.构建，例如 1.3.0.0。
+# 两条版本线各自独立更新（1.2 → update-1.2.json，1.3 → update.json）：
+#   1.3.x.x 带广告（主线）        bash build.sh
+#   1.2.x.x 无广告（维护线）       VERSION_NAME=1.2.0.0 WITH_ADS=0 bash build.sh
+VERSION_NAME="${VERSION_NAME:-1.3.0.0}"
+# versionCode 由版本号推算：主*10000 + 次*1000 + 修订*100 + 构建。
+# 好处是同一台手机上「1.3 的任何版本」都大于「1.2 的任何版本」，判断升降级不会错。
+IFS='.' read -r V_MAJOR V_MINOR V_PATCH V_BUILD <<< "$VERSION_NAME"
+V_BUILD="${V_BUILD:-0}"
+VERSION_CODE="${VERSION_CODE:-$(( V_MAJOR * 10000 + V_MINOR * 1000 + V_PATCH * 100 + V_BUILD ))}"
 WITH_ADS="${WITH_ADS:-1}"       # 1 = 带 AdMob，0 = 完全不含广告依赖
 TARGET_SDK="36"
 COMPILE_SDK="37"

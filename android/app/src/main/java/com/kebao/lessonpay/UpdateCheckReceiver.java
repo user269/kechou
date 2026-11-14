@@ -106,7 +106,7 @@ public class UpdateCheckReceiver extends BroadcastReceiver {
 
     /** 返回 true 表示清单读到了（不代表有新版本）；false 表示网络/格式失败，要早点重试。 */
     private static boolean check(Context ctx) {
-        String body = fetchBest();
+        String body = fetchBest(ctx);
         if (body == null) return false;
 
         int remote;
@@ -134,8 +134,9 @@ public class UpdateCheckReceiver extends BroadcastReceiver {
     }
 
     /** 并发拉所有候选清单，取 versionCode 最大的那份。 */
-    private static String fetchBest() {
-        String[] urls = Updater.FALLBACK_MANIFESTS;
+    private static String fetchBest(Context ctx) {
+        // 按版本线取清单：1.2 的包只查 update-1.2.json，不会被推上 1.3 的版本
+        String[] urls = Updater.fallbackManifests(ctx);
         final List<String> list = new ArrayList<>();
         for (String u : urls) {
             if (u != null && !u.trim().isEmpty()) list.add(u.trim());

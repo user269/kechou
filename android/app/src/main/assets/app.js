@@ -3220,13 +3220,13 @@ function renderMine() {
       </div>
       <div data-act="open-help" data-h="about">
         <div class="ml-ic" style="background:var(--brand-soft);color:var(--brand)">${ic('info', 16)}</div>
-        <b>关于</b><span class="rv">v${APP_VERSION}</span>
+        <b>关于</b><span class="rv">v${appVersion()}</span>
       </div>
     </div>
 
     <div class="mine-foot">
       <button class="danger-link" data-act="reset-demo">恢复示例数据</button>
-      <div class="ver" data-act="check-update">v${APP_VERSION} · 检查更新</div>
+      <div class="ver" data-act="check-update">v${appVersion()} · 检查更新</div>
     </div>
   `;
 }
@@ -3234,7 +3234,7 @@ function renderMine() {
 /* ============================================================
    帮助 · 说明 · 关于
    ============================================================ */
-const APP_VERSION = '1.3.0b';
+const APP_VERSION = '1.3.0.0';
 const APP_BUILD = '2026-11-12';
 
 let helpTab = 'faq';                       // faq | guide | about
@@ -3423,8 +3423,8 @@ const GUIDE_STEPS = [
 ];
 
 const CHANGELOG = [
-  { v: '1.3.0b', d: '2026-11-14', items: ['修掉接入广告后打开就闪退的问题：第三方库的启动项改由我们自己初始化，出错只降级不闪退', '万一还有问题：连续两次打不开会自动关掉广告，下次启动会告诉你原因'] },
-  { v: '1.2.1', d: '2026-11-14', items: ['无广告版本（1.2 线）：内容与 1.3 一致，但不含任何广告和广告依赖'] },
+  { v: '1.3.0.0', d: '2026-11-14', items: ['版本号改为四段（主.次.修订.构建），以后小修不再用字母后缀', '1.3 与 1.2 两条线各自独立更新：带广告的留在 1.3，不想看广告的停在 1.2', '修掉接入广告后打开就闪退的问题：第三方库的启动项改由我们自己初始化，连续两次打不开会自动关掉广告'] },
+  { v: '1.2.0.0', d: '2026-11-14', items: ['无广告版本（1.2 线）：功能与 1.3 一致，但不含任何广告和广告依赖'] },
   { v: '1.3.0a', d: '2026-11-14', items: ['修掉接入广告后打开就闪退的问题（第三方库的初始化配置没合并完整）', '崩溃记录提前到最早时机，万一还有问题，下次打开会弹出原因'] },
   { v: '1.3.0a', d: '2026-11-14', items: ['修掉接入广告后打开就闪退的问题（第三方库的初始化配置没合并完整）', '崩溃记录提前到最早时机，万一还有问题，下次打开会弹出原因'] },
   { v: '1.3.0', d: '2026-11-14', items: ['接入谷歌 AdMob 开屏广告', '开屏只在冷启动展示一次，关闭后不再打扰；从后台切回来不会弹', '需要手机装有 Google Play 服务才能出广告，没有的话静默跳过，功能完全不受影响'] },
@@ -3544,7 +3544,7 @@ function aboutHtml() {
     <div class="about-hero">
       <div class="about-logo">酬</div>
       <div class="about-name">课酬</div>
-      <div class="about-ver">v${APP_VERSION} · ${APP_BUILD}</div>
+      <div class="about-ver">v${appVersion()} · ${APP_BUILD}</div>
       <div class="about-tag">正课自习分开算，一节都不会漏</div>
     </div>
 
@@ -3604,13 +3604,58 @@ function aboutHtml() {
  * 它的内容可能是旧的，但至少能告诉用户「连上了，只是没看到新版」。
  * 用 @latest 而不是 @main —— tag 是不可变地址，新版本一发布就是全新 URL，不会被旧缓存粘住。
  */
-const UPDATE_SOURCES = [
-  'https://raw.githubusercontent.com/user269/kechou/main/update.json',
-  'https://ghfast.top/https://raw.githubusercontent.com/user269/kechou/main/update.json',
-  'https://gh-proxy.com/https://raw.githubusercontent.com/user269/kechou/main/update.json',
-  'https://ghproxy.net/https://raw.githubusercontent.com/user269/kechou/main/update.json',
-  'https://cdn.jsdelivr.net/gh/user269/kechou@latest/update.json',
-];
+const REPO_RAW = 'https://raw.githubusercontent.com/user269/kechou/main/';
+
+/**
+ * 当前安装包的版本号。
+ *
+ * 网页资源能热更新，安装包不能——所以「我是什么版本」必须以安装包为准：
+ * 否则 1.2 的包热更到 1.3 的前端后，会以为自己该查 1.3 的更新通道。
+ */
+function appVersion() {
+  try {
+    if (IS_NATIVE && NATIVE.appInfo) {
+      const info = JSON.parse(String(NATIVE.appInfo()) || '{}');
+      if (info && info.versionName) return String(info.versionName);
+    }
+  } catch (e) { /* 老版本没有 appInfo，退回常量 */ }
+  return APP_VERSION;
+}
+
+/** 版本属于哪条线：1.2.0.0 → "1.2"。两条线各自独立更新，互不干扰。 */
+function versionLine(v) {
+  const m = /^(\d+)\.(\d+)/.exec(String(v || ''));
+  return m ? `${m[1]}.${m[2]}` : '1.3';
+}
+
+/**
+ * 无广告维护线的版本号前缀。只有它会读自己那份清单，
+ * 其余版本（1.0/1.1/1.3…）一律走主通道——
+ * 万一某个老版本被漏判，也只是继续查主清单，不会去查一个不存在的文件。
+ */
+const CHANNEL_LEGACY = '1.2';
+
+/**
+ * 清单文件名按版本线分开：1.2 → update-1.2.json，其余 → update.json。
+ * 两条线各自独立更新：1.2 不会被推上 1.3 的包，反之亦然。
+ */
+function manifestFile() {
+  return versionLine(appVersion()) === CHANNEL_LEGACY
+    ? `update-${CHANNEL_LEGACY}.json`
+    : 'update.json';
+}
+
+/** 这一版该查的清单地址（五个镜像，同一个文件名） */
+function updateSources() {
+  const f = manifestFile();
+  return [
+    REPO_RAW + f,
+    'https://ghfast.top/' + REPO_RAW + f,
+    'https://gh-proxy.com/' + REPO_RAW + f,
+    'https://ghproxy.net/' + REPO_RAW + f,
+    'https://cdn.jsdelivr.net/gh/user269/kechou@latest/' + f,
+  ];
+}
 /** 安装包与资源包的镜像前缀，GitHub 的下载直链在国内同样常被卡。 */
 const MIRROR_PREFIXES = ['https://ghfast.top/', 'https://gh-proxy.com/', 'https://ghproxy.net/'];
 const UPDATE_GAP = 6 * 60 * 60 * 1000;   // 自动检查的最小间隔
@@ -3638,7 +3683,7 @@ function manifestSources() {
   const custom = String((state.settings && state.settings.updateSource) || '').trim();
   const list = [];
   if (custom) list.push(custom);
-  UPDATE_SOURCES.forEach(u => { if (list.indexOf(u) < 0) list.push(u); });
+  updateSources().forEach(u => { if (list.indexOf(u) < 0) list.push(u); });
   return list;
 }
 
@@ -3937,7 +3982,7 @@ function openUpdateSheet() {
 /** 换个更新源：给网络受限的用户留一条自己填地址的出路。 */
 function openUpdateSource() {
   const cur = String(state.settings.updateSource || '');
-  const def = UPDATE_SOURCES
+  const def = updateSources()
     .map((u, i) => `<div class="src-line"><b>${i + 1}</b><span>${esc(u)}</span></div>`)
     .join('');
   openSheet({
@@ -3952,7 +3997,7 @@ function openUpdateSource() {
         留空表示只用内置地址。
       </div>
       <details class="src-fold">
-        <summary>查看内置地址（${UPDATE_SOURCES.length} 个）</summary>
+        <summary>查看内置地址（${updateSources().length} 个）</summary>
         ${def}
       </details>
       <div class="rows" style="margin-top:14px">

@@ -32,6 +32,20 @@ import json, os, re, shutil, sys, zipfile
 mode, dist, manifest_path, base, web_files, owner, repo = sys.argv[1:8]
 web_files = web_files.split()
 
+# 两条版本线各自一份清单：1.3 → update.json，其他 → update-<线>.json。
+# 这样 1.2 的包查不到 1.3 的版本，反之亦然。
+if mode == 'apk':
+    vf = os.path.join('android', 'build', 'version.txt')
+    raw_ver = ''
+    if os.path.isfile(vf):
+        parts_v = open(vf, encoding='utf-8').read().split()
+        if parts_v:
+            raw_ver = parts_v[0]
+    m_v = re.match(r'^(\d+\.\d+)', raw_ver or '')
+    line_v = m_v.group(1) if m_v else '1.3'
+    if line_v == '1.2':          # 只有无广告维护线单独一份清单
+        manifest_path = 'update-%s.json' % line_v
+
 data = {}
 if os.path.isfile(manifest_path):
     with open(manifest_path, encoding='utf-8') as f:

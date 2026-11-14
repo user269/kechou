@@ -230,7 +230,7 @@ ok(api.scheduleDow('2026-10-12') === 1, '普通周一仍是周一', api.schedule
 
 console.log('\n【15】版本号与更新记录');
 api.switchTab('mine');
-const curVer = (txt(w, '#page-mine .mine-foot').match(/v\d+\.\d+\.\d+/) || [])[0];
+const curVer = (txt(w, '#page-mine .mine-foot').match(/v\d+(?:\.\d+){2,3}/) || [])[0];
 ok(!!curVer, '页脚有版本号', curVer);
 api.openHelp('about');
 ok(txt(w, '#sheetBody').includes(curVer), '关于页版本与页脚一致', curVer);

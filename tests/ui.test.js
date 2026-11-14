@@ -179,10 +179,10 @@ console.log('\n【11】帮助三格 + 页脚');
   ok(links.map(l => l.dataset.h).join('/') === 'faq/guide/about', 'data-h 完整', links.map(l => l.dataset.h));
   ok(links.map(l => l.querySelector('b').textContent).join('/') === '快捷帮助/使用说明/关于', '标题文案');
   const ver = $(w, '#page-mine .mine-foot .ver');
-  const curVer = (ver.textContent.match(/v\d+\.\d+\.\d+[a-z]?/) || [])[0];
+  const curVer = (ver.textContent.match(/v\d+(?:\.\d+){2,3}[a-z]?/) || [])[0];
   ok(links[2].textContent.includes(curVer), '关于格显示版本号', links[2].textContent.trim());
   ok(ver.dataset.act === 'check-update', '页脚版本号点了是检查更新', ver.dataset.act);
-  ok(/^v\d+\.\d+\.\d+[a-z]? · 检查更新$/.test(ver.textContent.trim()), '页脚只留一行', ver.textContent.trim());
+  ok(/^v\d+(?:\.\d+){2,3}[a-z]? · 检查更新$/.test(ver.textContent.trim()), '页脚只留一行', ver.textContent.trim());
   ok(!/浏览器|不会上传/.test(txt(w, '#page-mine .mine-foot')), '页脚不再堆说明');
 }
 

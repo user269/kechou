@@ -27,8 +27,19 @@ case "$MODE" in apk|web) ;; *) echo "用法：bash publish.sh [apk|web]"; exit 1
 # 先把 tag 指到当前提交并推到远端。
 # 否则 GitHub 收到 tag_name 时若远端没有该 tag，会把它建在当前 HEAD 上，
 # 结果 release 挂着旧提交，jsDelivr 的 @<tag> 路径取不到安装包。
-VER="$(python -c "import json;print(json.load(open('update.json'))['versionName'])" 2>/dev/null || echo '')"
-BUILD="$(python -c "import json;print((json.load(open('update.json')).get('web') or {}).get('build',0))" 2>/dev/null || echo 0)"
+# 两条版本线各自一份清单：1.2 → update-1.2.json，其余 → update.json。
+# MANIFEST 可以直接指定（同时发两条线时用得上，因为 version.txt 只记最后一次构建）
+if [ -z "${MANIFEST:-}" ]; then
+  MANIFEST="update.json"
+  if [ -f android/build/version.txt ]; then
+    LINE="$(cut -d' ' -f1 android/build/version.txt | cut -d. -f1,2)"
+    if [ "${LINE:-}" = "1.2" ]; then MANIFEST="update-$LINE.json"; fi
+  fi
+fi
+echo "清单：$MANIFEST"
+
+VER="$(python -c "import json;print(json.load(open('$MANIFEST'))['versionName'])" 2>/dev/null || echo '')"
+BUILD="$(python -c "import json;print((json.load(open('$MANIFEST')).get('web') or {}).get('build',0))" 2>/dev/null || echo 0)"
 if [ "$MODE" = "apk" ]; then TAG="v$VER"; else TAG="web-$BUILD"; fi
 if git rev-parse -q --verify HEAD >/dev/null 2>&1; then
   git tag -f "$TAG" >/dev/null 2>&1 || true
@@ -39,7 +50,7 @@ if git rev-parse -q --verify HEAD >/dev/null 2>&1; then
   fi
 fi
 
-GITHUB_TOKEN="$TOKEN" REPO="$REPO" MODE="$MODE" python - <<'PY'
+GITHUB_TOKEN="$TOKEN" REPO="$REPO" MODE="$MODE" MANIFEST="$MANIFEST" python - <<'PY'
 import json, os, sys, urllib.error, urllib.parse, urllib.request
 
 TOKEN = os.environ['GITHUB_TOKEN']
@@ -85,7 +96,7 @@ def upload(rid, path):
     except urllib.error.HTTPError as e:
         raise SystemExit('上传失败 %s\n%s' % (e.code, e.read().decode('utf-8', 'replace')[:500]))
 
-m = json.load(open('update.json', encoding='utf-8'))
+m = json.load(open(os.environ.get('MANIFEST', 'update.json'), encoding='utf-8'))
 
 if MODE == 'apk':
     tag = 'v' + m['versionName']
@@ -120,4 +131,4 @@ print('地址：%s' % rel['html_url'])
 PY
 
 echo
-echo "提示：清单 update.json 已指向该地址，确认已提交到 main。"
+echo "提示：清单 $MANIFEST 已指向该地址，确认已提交到 main。"

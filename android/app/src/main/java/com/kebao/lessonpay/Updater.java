@@ -32,12 +32,42 @@ import java.util.zip.ZipInputStream;
  */
 public class Updater {
 
+    /** 无广告维护线的版本前缀 */
+    private static final String LEGACY_LINE = "1.2";
+
+    private static final String REPO_RAW =
+            "https://raw.githubusercontent.com/user269/kechou/main/";
+
     /**
-     * 更新清单地址。换成自己的仓库 raw 地址即可，例如：
-     * https://raw.githubusercontent.com/你的用户名/仓库名/main/update.json
+     * 清单文件名按版本线分开：
+     *   1.3.x.x → update.json（主通道，带广告）
+     *   其他    → update-<线>.json，例如 update-1.2.json
+     *
+     * 两条线各自独立更新：1.2 的用户不会被推上 1.3 的包，反之亦然。
+     * 版本线取自安装包的 versionName（不是网页版本——网页会热更新，安装包不会）。
      */
-    public static final String MANIFEST_URL =
-            "https://raw.githubusercontent.com/user269/kechou/main/update.json";
+    static String manifestName(Context ctx) {
+        // 只有无广告维护线读自己那份清单，其余版本一律走主通道。
+        // 这样老版本（1.0/1.1）不会被导到一个不存在的文件名上。
+        String line = versionLine(versionName(ctx));
+        return LEGACY_LINE.equals(line) ? "update-" + LEGACY_LINE + ".json" : "update.json";
+    }
+
+    /** 1.2.0.0 → "1.2"；取不到就按主通道处理 */
+    static String versionLine(String name) {
+        if (name == null) return "1.3";
+        java.util.regex.Matcher m =
+                java.util.regex.Pattern.compile("^(\\d+)\\.(\\d+)").matcher(name.trim());
+        return m.find() ? m.group(1) + "." + m.group(2) : "1.3";
+    }
+
+    static String versionName(Context ctx) {
+        try {
+            return ctx.getPackageManager().getPackageInfo(ctx.getPackageName(), 0).versionName;
+        } catch (Throwable t) {
+            return "";
+        }
+    }
 
     /**
      * 国内 raw.githubusercontent.com 常被 DNS 污染，解析到 0.0.0.0 直接连不上。
@@ -46,13 +76,16 @@ public class Updater {
      * 注意不要用 jsDelivr 的 @main：分支地址带 12 小时 CDN 缓存，
      * 新版本发布后它还会继续吐旧清单，导致客户端永远认为「已是最新」。
      */
-    static final String[] FALLBACK_MANIFESTS = {
-            MANIFEST_URL,
-            "https://ghfast.top/https://raw.githubusercontent.com/user269/kechou/main/update.json",
-            "https://gh-proxy.com/https://raw.githubusercontent.com/user269/kechou/main/update.json",
-            "https://ghproxy.net/https://raw.githubusercontent.com/user269/kechou/main/update.json",
-            "https://cdn.jsdelivr.net/gh/user269/kechou@latest/update.json",
-    };
+    static String[] fallbackManifests(Context ctx) {
+        String f = manifestName(ctx);
+        return new String[]{
+                REPO_RAW + f,
+                "https://ghfast.top/" + REPO_RAW + f,
+                "https://gh-proxy.com/" + REPO_RAW + f,
+                "https://ghproxy.net/" + REPO_RAW + f,
+                "https://cdn.jsdelivr.net/gh/user269/kechou@latest/" + f,
+        };
+    }
 
     private static final String PREFS = "kebao_update";
     private static final String KEY_WEB_BUILD = "webBuild";
@@ -445,7 +478,7 @@ public class Updater {
     }
 
     /** 把页面传来的地址列表解析成数组；解析不了就退回内置候选。 */
-    private static String[] parseUrls(String json) {
+    private String[] parseUrls(String json) {
         if (!isBlank(json)) {
             String t = json.trim();
             if (t.startsWith("http")) return new String[]{t};
@@ -458,7 +491,7 @@ public class Updater {
                 // 落到兜底列表
             }
         }
-        return FALLBACK_MANIFESTS;
+        return fallbackManifests(act);
     }
 
     private String httpGetText(String urlStr, int connectMs) throws IOException {

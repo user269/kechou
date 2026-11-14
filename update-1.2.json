@@ -1,0 +1,25 @@
+{
+  "versionCode": 12000,
+  "versionName": "1.2.0.0",
+  "notes": [
+    "无广告版本：功能与 1.3 一致，不含任何广告与广告依赖",
+    "这条线独立更新，不会被推上带广告的版本"
+  ],
+  "apk": {
+    "url": "https://github.com/user269/kechou/releases/download/v1.2.0.0/kebao-1.2.0.0.apk",
+    "size": 419062,
+    "mirrors": [
+      "https://ghfast.top/https://github.com/user269/kechou/releases/download/v1.2.0.0/kebao-1.2.0.0.apk",
+      "https://gh-proxy.com/https://github.com/user269/kechou/releases/download/v1.2.0.0/kebao-1.2.0.0.apk",
+      "https://ghproxy.net/https://github.com/user269/kechou/releases/download/v1.2.0.0/kebao-1.2.0.0.apk"
+    ]
+  },
+  "web": {
+    "build": 0,
+    "url": "",
+    "size": 0,
+    "notes": []
+  },
+  "updated": "2026-11-14T07:56:48Z",
+  "channel": "1.2"
+}

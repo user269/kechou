@@ -194,25 +194,39 @@ Google Maven / Maven Central / 阿里云 → 下载 aar/jar。
 - banner：目前 `AdHost.createBanner()` 只返回占位视图——把 AdMob 的 `AdView` 建好
   `return` 出来，同时把 `AdHost.sdkReady()` 改成 `true`，前端的「广告位预览」入口会自动消失
 
-## 两条版本线（带广告 / 无广告）
+## 两条版本线（带广告 / 无广告，独立更新）
 
-同一份代码，靠构建参数产出两种包：
+版本号统一四段 **主.次.修订.构建**（如 `1.3.0.0`），`versionCode` 由版本号推算：
+`主×10000 + 次×1000 + 修订×100 + 构建`。于是 `1.3.x.x` 恒大于 `1.2.x.x`，升降级判断不会错。
+
+两条线各有一份更新清单，客户端按**自己安装包的 versionName** 选（不是网页版本——网页会热更，安装包不会）：
+
+| 版本线 | 清单文件 | 是否带广告 | 包大小 |
+|---|---|---|---|
+| `1.3.x.x` | `update.json`（主通道） | 是 | 约 5.6 MB / 2 dex |
+| `1.2.x.x` | `update-1.2.json` | 否 | 约 419 KB / 1 dex |
+
+其余版本（1.0 / 1.1 等）一律走主通道——万一判断漏了，只会继续查主清单，
+不会去查一个不存在的文件。
 
 ```bash
-# 1.3.x 起：带 AdMob 开屏广告（主通道）
-bash android/build.sh
+# 1.3 线（带 AdMob，主通道）
+bash android/build.sh && bash release.sh apk
 
-# 1.2.x 起：完全不含广告与广告依赖（维护线，约 419KB / 1 个 dex）
-VERSION_NAME=1.2.1 VERSION_CODE=26 WITH_ADS=0 bash android/build.sh
+# 1.2 线（无广告，维护线）
+VERSION_NAME=1.2.0.0 WITH_ADS=0 bash android/build.sh && bash release.sh apk
 ```
+
+`release.sh` 与 `publish.sh` 都会按版本线自动选清单。同一轮要发两条线时，
+`publish.sh` 可用 `MANIFEST=update.json` 显式指定（`build/version.txt` 只记最后一次构建）。
 
 `WITH_ADS=0` 时构建脚本做三件事：不收集 `libs/` 里的任何第三方库、把 `Ads.java` 换成
 `app/src/noads/java/.../Ads.java` 的空实现（签名完全一致，调用点不用改）、清单里不带任何
 AdMob 组件。前端通过 `adInfo()` 里的 `ads` 字段知道当前包有没有广告，无广告包里
 「广告位预览」入口会自动隐藏。
 
-> 注意：热更新是两条线共用的。1.2.x 的包如果联网更新了网页资源，界面会变成 1.3 的样子
-> （功能一致、仍然没有广告），但页脚版本号会显示网页版本。要严格对齐就别让无广告包更新网页。
+> 页脚与关于页显示的是**安装包版本**（`NATIVE.appInfo()`），不是网页版本，
+> 所以热更新过界面之后版本号也不会串。1.2 线的清单里 `web.build` 恒为 0，不会给它推网页资源。
 
 ## 第三方库的启动期 Provider 为什么被剔除
 

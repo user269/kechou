@@ -58,6 +58,7 @@ function bootNative(info) {
   w.eval(fs.readFileSync(ROOT + '/app.js', 'utf8') + `
 window.__api = {
   get state(){return state}, UPD, checkUpdate, openUpdateSheet, renderUpdateSheet,
+  appVersion, versionLine, manifestFile, updateSources,
   switchTab, render, localAppInfo, applyManifest, handleCheck, startUpdate
 };`);
   return w;
@@ -269,7 +270,7 @@ const NONE = JSON.stringify({
   api.switchTab('mine');
   ok(!$(w, '#page-mine [data-act="open-help"][data-h="about"]').textContent.match(/检查更新/), '关于格里不再重复放置检查更新');
   const verRow = $(w, '#page-mine .mine-foot .ver');
-  ok(new RegExp('v' + VER.replace(/\./g, '\\.') + ' · 检查更新').test(verRow.textContent), '版本行写明可检查更新', verRow.textContent.trim());
+  ok(/v\d+(?:\.\d+){2,3} · 检查更新/.test(verRow.textContent.trim()), '版本行写明可检查更新', verRow.textContent.trim());
   verRow.click();
   await wait(30);
   ok(txt(w, '#sheetTitle') === '软件更新', '点击后切到更新面板', txt(w, '#sheetTitle'));
@@ -288,6 +289,28 @@ const NONE = JSON.stringify({
   api.checkUpdate(false);
   await wait(30);
   ok(api.UPD.kind === '', '本地资源号已追上，不再提示', api.UPD.kind);
+
+  /* ------------------------------------------------------------------ */
+  console.log('\n【13】两条版本线各查各的清单');
+  w = bootNative({ versionName: '1.3.0.0', versionCode: 13000 });
+  api = w.__api;
+  ok(api.versionLine('1.3.0.0') === '1.3', '四段版本识别为 1.3 线', api.versionLine('1.3.0.0'));
+  ok(api.versionLine('1.2.0.0') === '1.2', '四段版本识别为 1.2 线', api.versionLine('1.2.0.0'));
+  ok(api.manifestFile() === 'update.json', '1.3 走主通道', api.manifestFile());
+  ok(api.updateSources().every(u => /\/update\.json$/.test(u)), '五个镜像都是主清单', api.updateSources());
+
+  w = bootNative({ versionName: '1.2.0.0', versionCode: 12000 });
+  api = w.__api;
+  ok(api.manifestFile() === 'update-1.2.json', '1.2 走自己的清单', api.manifestFile());
+  ok(api.updateSources().every(u => /\/update-1\.2\.json$/.test(u)), '五个镜像都换成 1.2 的清单', api.updateSources());
+
+  // 老版本（1.0/1.1）不该被导到一个不存在的文件名上
+  w = bootNative({ versionName: '1.1.2', versionCode: 29 });
+  api = w.__api;
+  ok(api.manifestFile() === 'update.json', '1.1 仍走主通道', api.manifestFile());
+
+  console.log('\n【14】显示的是安装包版本，不是网页版本');
+  ok(api.appVersion() === '1.1.2', '取安装包的 versionName', api.appVersion());
 
   console.log(`\n=== 通过 ${pass} / 失败 ${fail} ===`);
   process.exit(fail ? 1 : 0);
