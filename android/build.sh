@@ -24,8 +24,8 @@ OUT="build"
 KS="keystore.jks"
 # 签名密码不写进仓库：优先读环境变量，其次读本地 android/.keystore-pass
 KS_PASS="${KS_PASS:-$(cat .keystore-pass 2>/dev/null || true)}"
-VERSION_NAME="1.2.0"
-VERSION_CODE="30"
+VERSION_NAME="1.3.0"
+VERSION_CODE="31"
 TARGET_SDK="36"
 COMPILE_SDK="37"
 APK_NAME="课酬-${VERSION_NAME}.apk"
@@ -35,26 +35,25 @@ APK_NAME="课酬-${VERSION_NAME}.apk"
 [ -f "$BT_POSIX/aapt2.exe" ] || { echo "缺少 build-tools/37.0.0"; exit 1; }
 [ -n "$KS_PASS" ] || { echo "缺少签名密码：把密码写入 android/.keystore-pass，或设置 KS_PASS 环境变量"; exit 1; }
 
-echo "==> 1/10 同步网页资源"
+echo "==> 1/11 同步网页资源"
 mkdir -p "$APP/assets"
 for f in index.html styles.css app.js icon.svg icon-192.png icon-512.png manifest.json; do
   cp "../$f" "$APP/assets/$f"
 done
 
-echo "==> 2/10 清理产物"
+echo "==> 2/11 清理产物"
 rm -rf "$OUT"
 mkdir -p "$OUT/gen" "$OUT/classes" "$OUT/dex"
 
-echo "==> 3/10 收集第三方库（$LIBS/）"
+echo "==> 3/11 收集第三方库（$LIBS/）"
 # 手写构建链没有 Gradle 的依赖解析，这里把 libs 下的东西摊平：
 #   *.jar          → 直接进 classpath，和项目代码一起转 dex
 #   *.aar          → 解出 classes.jar / res / jni，分别并入对应阶段
 # manifest 不做自动合并（真正的合并器很重），只把权限列出来提示，
 # 需要声明的组件请手动加到 app/src/main/AndroidManifest.xml。
 JARS="$OUT/libjars"
-AAR_RES="$OUT/aarres"
 AAR_JNI="$OUT/aarjni"
-mkdir -p "$JARS" "$AAR_RES" "$AAR_JNI"
+mkdir -p "$JARS" "$AAR_JNI"
 
 LIB_JARS=()
 LIB_NAMES=()
@@ -85,7 +84,6 @@ if [ -d "$LIBS" ]; then
       LIB_JARS+=("$(cygpath -m "$JARS/$name.jar")")
       LIB_NAMES+=("$name.aar（${ncls:-0} 个类）")
     fi
-    [ -d "$d/res" ] && [ -n "$(ls -A "$d/res" 2>/dev/null)" ] && cp -r "$d/res/." "$AAR_RES/"
     if [ -d "$d/jni" ]; then
       for abi in $(ls "$d/jni" 2>/dev/null); do
         mkdir -p "$AAR_JNI/$abi"
@@ -112,20 +110,42 @@ for h in "${MANIFEST_HINTS[@]:-}"; do
   [ -n "$h" ] && echo "    提醒：$h"
 done
 
-echo "==> 4/10 编译资源 (aapt2 compile)"
+echo "==> 4/11 编译资源 (aapt2 compile)"
 "$BT_POSIX/aapt2.exe" compile --dir "$APP/res" -o "$OUT/res.zip"
 RES_ARGS=("$OUT/res.zip")
-# AAR 自带的资源单独编一份，link 时一起给
-if [ -n "$(ls -A "$AAR_RES" 2>/dev/null)" ]; then
-  "$BT_POSIX/aapt2.exe" compile --dir "$AAR_RES" -o "$OUT/aar-res.zip"
-  RES_ARGS+=("$OUT/aar-res.zip")
+# 每个 AAR 的 res 单独编译，link 时一起传。
+# 不能直接 cp 到一个目录：多个库都有 values-de/values.xml 这类同名文件，
+# 覆盖会丢掉其他库的翻译；而且 AAR 里的文件是只读的，覆盖还会失败。
+RES_N=0
+for d in "$OUT"/aar/*/; do
+  [ -d "$d/res" ] || continue
+  RES_N=$((RES_N+1))
+  if "$BT_POSIX/aapt2.exe" compile --dir "$d/res" -o "$OUT/aar-res-$RES_N.zip" 2>"$OUT/aar-res-$RES_N.log"; then
+    RES_ARGS+=("$OUT/aar-res-$RES_N.zip")
+  else
+    echo "    警告：$(basename "$d") 的资源编译失败（已跳过）"
+    head -3 "$OUT/aar-res-$RES_N.log" | sed 's/^/      /'
+  fi
+done
+[ "$RES_N" -gt 0 ] && echo "    已编译 $RES_N 个 AAR 的资源"
+
+echo "==> 5/11 合并清单 (AAR 的权限与组件)"
+# Gradle 有 manifest merger，手写链没有。少了这一步，SDK 的 Activity/Provider
+# 不会被注册，运行时才报 ActivityNotFound，很难查。
+MANIFEST_TO_USE="$APP/AndroidManifest.xml"
+if [ -n "$(ls -A "$OUT/aar" 2>/dev/null)" ]; then
+  python tools/merge-manifests.py "$APP/AndroidManifest.xml" "$OUT/aar" "$OUT/AndroidManifest.xml" \
+    || { echo "    清单合并失败"; exit 1; }
+  MANIFEST_TO_USE="$OUT/AndroidManifest.xml"
+else
+  echo "    没有 AAR，跳过"
 fi
 
-echo "==> 5/10 链接资源与清单 (aapt2 link)"
+echo "==> 6/11 链接资源与清单 (aapt2 link)"
 "$BT_POSIX/aapt2.exe" link \
   -o "$OUT/base.apk" \
   -I "$PLATFORM_WIN" \
-  --manifest "$APP/AndroidManifest.xml" \
+  --manifest "$MANIFEST_TO_USE" \
   --java "$OUT/gen" \
   -A "$APP/assets" \
   --min-sdk-version 23 \
@@ -134,7 +154,7 @@ echo "==> 5/10 链接资源与清单 (aapt2 link)"
   --version-name "$VERSION_NAME" \
   "${RES_ARGS[@]}"
 
-echo "==> 6/10 编译 Java 源码 (javac)"
+echo "==> 7/11 编译 Java 源码 (javac)"
 # core-lambda-stubs.jar 让 javac 在 android.jar 作为 bootclasspath 时仍能编译 lambda
 CP="$PLATFORM_WIN;$BT_WIN/core-lambda-stubs.jar"
 for j in "${LIB_JARS[@]:-}"; do
@@ -149,7 +169,7 @@ find "$APP/java" -name '*.java' > "$OUT/srclist.txt"
   "$OUT/gen/com/kebao/lessonpay/R.java" \
   @"$OUT/srclist.txt"
 
-echo "==> 7/10 转换为 dex (d8)"
+echo "==> 8/11 转换为 dex (d8)"
 find "$OUT/classes" -name "*.class" > "$OUT/classlist.txt"
 # 第三方 jar 和项目 class 一起转：d8 接受 jar 作为输入，产出一份 classes.dex
 "$JDK_POSIX/bin/java.exe" -cp "$BT_WIN/lib/d8.jar" com.android.tools.r8.D8 \
@@ -159,9 +179,14 @@ find "$OUT/classes" -name "*.class" > "$OUT/classlist.txt"
   @"$OUT/classlist.txt" \
   "${LIB_JARS[@]:-}"
 
-( cd "$OUT/dex" && "$JDK_POSIX/bin/jar.exe" uf "../base.apk" classes.dex )
+# 方法数超过 64K 时 d8 会拆出 classes2.dex、classes3.dex…，必须全部打进去，
+# 少打一个就是运行时 NoClassDefFoundError。min-api 23 下多 dex 是系统原生支持的，
+# 不需要 MultiDexApplication。
+DEX_COUNT=$(ls "$OUT/dex"/classes*.dex 2>/dev/null | wc -l | tr -d ' ')
+echo "    生成 $DEX_COUNT 个 dex"
+( cd "$OUT/dex" && "$JDK_POSIX/bin/jar.exe" uf "../base.apk" $(ls classes*.dex) )
 
-echo "==> 8/10 打包原生库"
+echo "==> 9/11 打包原生库"
 # 手写的构建链没有 Gradle 的 jniLibs 插件，这里自己把 .so 塞进 lib/<abi>/。
 # 两点必须遵守，否则 Android 15 起（尤其 16KB 页设备）装得上但加载失败：
 #   1) 必须以「不压缩」方式存储（清单里 extractNativeLibs=false，运行时直接 mmap）
@@ -204,7 +229,7 @@ with zipfile.ZipFile(apk, 'a', zipfile.ZIP_DEFLATED) as z:
         print('    + %s (%d KB)' % (arc, os.path.getsize(path) // 1024))
 PY
 
-echo "==> 9/10 对齐 (zipalign，原生库按 16KB 页对齐)"
+echo "==> 10/11 对齐 (zipalign，原生库按 16KB 页对齐)"
 # -P 16 表示把未压缩的 .so 对齐到 16KB 边界（16KB 页设备的硬要求），
 # 注意 -P 不能和 -p 同时用，所以这里不再传 -p。
 # zipalign 给未压缩条目插对齐填充时，会对自己制造的中间态刷 "header mismatch"。
@@ -219,7 +244,7 @@ if grep -qv "header mismatch" "$ZLOG" 2>/dev/null; then
   grep -v "header mismatch" "$ZLOG" | grep -v '^[[:space:]]*$' | sed 's/^/    /' || true
 fi
 
-echo "==> 10/10 签名 (apksigner)"
+echo "==> 11/11 签名 (apksigner)"
 if [ ! -f "$KS" ]; then
   echo "    生成签名证书 $KS"
   "$JDK_POSIX/bin/keytool.exe" -genkeypair -v \

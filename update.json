@@ -1,18 +1,18 @@
 {
-  "versionCode": 30,
-  "versionName": "1.2.0",
+  "versionCode": 31,
+  "versionName": "1.3.0",
   "notes": [
-    "为将来的广告位预留了位置——当前不显示任何广告，功能与之前完全一致",
-    "「我的 → 广告位预览」可以看清广告将来会出现在哪、占多大",
-    "只放课时费和我的页；课表页与录入表单不插广告"
+    "接入谷歌 AdMob 开屏广告",
+    "开屏只在冷启动展示一次，关闭后不再打扰，从后台切回来不会弹",
+    "需要手机装有 Google Play 服务才能出广告；没有的话静默跳过，功能完全不受影响"
   ],
   "apk": {
-    "url": "https://github.com/user269/kechou/releases/download/v1.2.0/kebao-1.2.0.apk",
-    "size": 414966,
+    "url": "https://github.com/user269/kechou/releases/download/v1.3.0/kebao-1.3.0.apk",
+    "size": 5780856,
     "mirrors": [
-      "https://ghfast.top/https://github.com/user269/kechou/releases/download/v1.2.0/kebao-1.2.0.apk",
-      "https://gh-proxy.com/https://github.com/user269/kechou/releases/download/v1.2.0/kebao-1.2.0.apk",
-      "https://ghproxy.net/https://github.com/user269/kechou/releases/download/v1.2.0/kebao-1.2.0.apk"
+      "https://ghfast.top/https://github.com/user269/kechou/releases/download/v1.3.0/kebao-1.3.0.apk",
+      "https://gh-proxy.com/https://github.com/user269/kechou/releases/download/v1.3.0/kebao-1.3.0.apk",
+      "https://ghproxy.net/https://github.com/user269/kechou/releases/download/v1.3.0/kebao-1.3.0.apk"
     ]
   },
   "web": {
@@ -21,5 +21,5 @@
     "size": 0,
     "notes": []
   },
-  "updated": "2026-11-13T10:28:05Z"
+  "updated": "2026-11-14T02:07:52Z"
 }

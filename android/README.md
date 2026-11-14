@@ -127,7 +127,74 @@ targetSdk 36 起预测性返回默认开启，系统只调 `OnBackInvokedCallbac
   `window.__kebaoOpenUpdate()`，直接打开更新面板并静默检查一次。
 - 同一版本只提醒一次（`kebao_update_check.notifiedCode`），不重复打扰。
 
-## 广告位（只搭了架子，没有接任何广告）
+## 谷歌广告（AdMob）
+
+已接入 **AdMob 开屏广告（App Open）**。
+
+| 项 | 值 |
+|---|---|
+| 应用 ID | `ca-app-pub-4703913003378934~4670206775`（写在清单的 meta-data） |
+| 开屏广告位 | `ca-app-pub-4703913003378934/8982867205`（写在 `Ads.java`） |
+
+### 先说清楚可用性
+
+AdMob 依赖 **Google Play 服务（GMS）**。国内销售的安卓手机多数没有 GMS，
+而且访问不到 `googleads.g.doubleclick.net`，结果是**永远拿不到广告**。
+
+所以代码里所有失败路径都只记日志（`Log.w`），用户完全无感：
+
+- 没 GMS → `MobileAds.initialize` 回调不来或直接抛异常 → 标记失败，不再重试
+- 加载不到 → `onAdFailedToLoad` 记一条日志，界面不动
+- 展示失败 → 同样只记日志
+
+**换句话说：在国内设备上，这个版本和没接广告的版本，用户体验完全一样。**
+
+带 GMS 的设备（海外版机型、部分国行）才能看到开屏。
+
+### 展示时机（都是平台硬要求）
+
+1. **等界面画出来**再弹——挂在 `onPageFinished` 之后延迟 350ms，太早弹会被判违规
+2. **只在冷启动展示一次**，从后台切回来不弹（`Ads.onLeaveForeground()` 标记）
+3. 广告缓存超过 4 小时丢弃重来
+4. 初始化必须先完成：`MobileAds.initialize` 回调没回来就 `load`，填充率永远是 0
+
+### 依赖是怎么来的
+
+AdMob 的依赖树是 **54 个包、16.7 MB**（`play-services-ads` 一家拖出 androidx.work、
+room、sqlite、guava、kotlin-stdlib）。手写构建链没有 Gradle 解析，所以配了个脚本：
+
+```bash
+python android/tools/fetch-deps.py            # 拉到 android/libs/
+python android/tools/fetch-deps.py --dry-run  # 只看会下什么
+```
+
+脚本做的事：递归读 pom → 同 artifact 取最高版本 → 依次试
+Google Maven / Maven Central / 阿里云 → 下载 aar/jar。
+
+两个坑它已经处理了：
+
+- **`<dependencyManagement>` 里的 BOM 不是依赖**。一开始用 `root.iter('dependency')`
+  把 BOM 里列的 `kotlinx-coroutines-rx2/rx3/slf4j/swing/test` 全当成了真依赖，
+  32.5 MB 里一半是永远用不到的包。改成只读顶层 `<dependencies>` 后降到 54 个。
+- **`optional=true` 的依赖要跳过**，那是"你要用才需要"的适配器。
+
+`android/libs/` 不进仓库（16MB 二进制），换机器先跑一次脚本。
+
+### 构建链为了它改了三处
+
+| 改动 | 为什么 |
+|---|---|
+| **多 dex** | 方法数超过 64K，d8 会拆出 `classes2.dex`；少打一个就是运行时 `NoClassDefFoundError` |
+| **清单自动合并**（`tools/merge-manifests.py`） | Gradle 有 manifest merger，手写链没有。AdMob 的 `AdActivity` 是在 AAR 里的，不合并就是运行时 `ActivityNotFound` |
+| **逐库编译资源** | 14 个 AAR 都有 `values-xx/values.xml`，`cp` 到一个目录会互相覆盖丢翻译，而且 AAR 里的文件只读、覆盖直接报错 |
+
+### 想加 banner 或换广告位
+
+- 开屏：改 `Ads.java` 里的 `UNIT_SPLASH`
+- banner：目前 `AdHost.createBanner()` 只返回占位视图——把 AdMob 的 `AdView` 建好
+  `return` 出来，同时把 `AdHost.sdkReady()` 改成 `true`，前端的「广告位预览」入口会自动消失
+
+## 广告位（banner 只搭了架子，没接真实广告）
 
 代码里有广告位，但**没有接入任何广告平台**——接穿山甲/优量汇需要：开发者账号、
 AppID（穿山甲是 5 开头的 7 位）、广告位 ID，以及平台对应用的审核（一般要软著/备案）。

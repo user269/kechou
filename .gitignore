@@ -35,3 +35,8 @@ desktop.ini
 
 # WorkBuddy 本地工作目录
 .workbuddy/
+
+# 第三方库是脚本拉下来的（16MB 二进制，不适合进仓库）
+# 换机器时先跑：python android/tools/fetch-deps.py
+android/libs/*.aar
+android/libs/*.jar

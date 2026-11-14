@@ -106,6 +106,9 @@ public class MainActivity extends Activity {
         adHost = new AdHost(this);
         root.addView(adHost.view());
 
+        // AdMob 初始化（异步）。没有 Google Play 服务的设备会失败，这里静默跳过
+        Ads.init(this);
+
         setContentView(root);
         CrashLog.step(this, web == null ? "WebView 不可用" : "WebView 已创建");
 
@@ -347,6 +350,13 @@ public class MainActivity extends Activity {
 
             @Override
             public void onPageFinished(WebView view, String url) {
+                // 开屏广告要等界面真的画出来再弹：太早会盖住空白页，
+                // 平台也把「启动瞬间弹广告」算作违规。
+                // 只弹一次，且只在冷启动；没加载到就直接跳过，不耽误使用。
+                view.postDelayed(() -> {
+                    try { Ads.showIfReady(MainActivity.this); } catch (Throwable ignored) { }
+                }, 350);
+
                 // 页面就绪后再打开更新面板，否则 JS 还没跑起来
                 if (!pendingOpenUpdate) return;
                 pendingOpenUpdate = false;
@@ -556,6 +566,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onStop() {
         super.onStop();
+        Ads.onLeaveForeground();
         // 退到后台就别再监听局域网了：否则同一个 WiFi 下的人一直能试配对码。
         // 回到前台后用户在面板里重新点「开启接收」即可。
         try { LanSync.stop(); } catch (Throwable ignored) { }

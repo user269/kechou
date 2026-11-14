@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.kebao.lessonpay"
-    android:versionCode="30"
-    android:versionName="1.2.0">
+    android:versionCode="31"
+    android:versionName="1.3.0">
 
     <uses-sdk android:minSdkVersion="23" android:targetSdkVersion="36" />
 
@@ -22,6 +22,8 @@
     <!-- 局域网发现必须持有 MulticastLock，否则 WiFi 驱动会在硬件层丢弃广播包，
          小米/OPPO/vivo 等机型会一直扫不到对方。这是普通权限，不需运行时申请。 -->
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+    <!-- AdMob：取广告标识（Android 13+ 需要声明，否则广告请求会被拒） -->
+    <uses-permission android:name="com.google.android.gms.permission.AD_ID" />
 
     <application
         android:name=".App"
@@ -34,6 +36,11 @@
         android:roundIcon="@mipmap/ic_launcher"
         android:supportsRtl="false"
         android:theme="@style/AppTheme">
+
+        <!-- AdMob 应用 ID：写错或缺失，SDK 初始化会直接失败并提示 -->
+        <meta-data
+            android:name="com.google.android.gms.ads.APPLICATION_ID"
+            android:value="ca-app-pub-4703913003378934~4670206775" />
 
         <activity
             android:name=".MainActivity"
