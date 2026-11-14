@@ -390,6 +390,7 @@ public class WebBridge {
         boolean ready = h != null && h.sdkReady();
         boolean preview = h != null && h.isPreview();
         return "{\"ok\":true,\"ready\":" + ready + ",\"preview\":" + preview
+                + ",\"ads\":" + Ads.SUPPORTED
                 + ",\"position\":\"" + (h == null ? "" : h.currentPosition()) + "\"}";
     }
 

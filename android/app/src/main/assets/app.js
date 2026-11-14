@@ -1587,13 +1587,35 @@ function adAvailable() {
   return !!(NATIVE && typeof NATIVE.adShow === 'function');
 }
 
-let __adReady = null;
-/** 是否已接入真实广告 SDK。没接的时候才需要「预览」这回事 */
+let __adInfo = null;
+/**
+ * 原生侧的广告状态。
+ *   ready —— 是否已接上真实广告 SDK
+ *   ads   —— 这个安装包是否内置了广告（无广告版本是 false）
+ * 老版本没有 ads 字段，按 true 处理，免得升级前后入口突然消失
+ */
+function adInfoCache() {
+  if (__adInfo !== null) return __adInfo;
+  if (!adAvailable() || typeof NATIVE.adInfo !== 'function') {
+    __adInfo = { ready: false, ads: false };
+    return __adInfo;
+  }
+  try {
+    const o = JSON.parse(String(NATIVE.adInfo())) || {};
+    __adInfo = { ready: !!o.ready, ads: o.ads !== false };
+  } catch (e) {
+    __adInfo = { ready: false, ads: true };
+  }
+  return __adInfo;
+}
+
 function adSdkReady() {
-  if (__adReady !== null) return __adReady;
-  if (!adAvailable() || typeof NATIVE.adInfo !== 'function') { __adReady = false; return false; }
-  try { __adReady = !!JSON.parse(String(NATIVE.adInfo())).ready; } catch (e) { __adReady = false; }
-  return __adReady;
+  return adInfoCache().ready;
+}
+
+/** 这个安装包是否内置广告；无广告版本里相关入口全部隐藏 */
+function adBuilt() {
+  return adInfoCache().ads;
 }
 
 /** 切到某个页面时调用：决定要不要、什么时候露出广告 */
@@ -3173,7 +3195,7 @@ function renderMine() {
         <div class="rc"><div class="t">多设备同步</div><div class="s">${syncMineSub()}</div></div>
         ${ic('right', 15)}
       </div>
-      ${(!adSdkReady() && adAvailable()) ? `
+      ${(adBuilt() && !adSdkReady() && adAvailable()) ? `
       <div class="row" data-act="toggle-ad-preview">
         <div class="ri" style="background:#F2F4F7;color:var(--ink-2)">${ic('grid', 17)}</div>
         <div class="rc"><div class="t">广告位预览</div><div class="s">看看广告会出现在哪、占多大，不显示真实广告</div></div>
@@ -3212,7 +3234,7 @@ function renderMine() {
 /* ============================================================
    帮助 · 说明 · 关于
    ============================================================ */
-const APP_VERSION = '1.3.0a';
+const APP_VERSION = '1.3.0b';
 const APP_BUILD = '2026-11-12';
 
 let helpTab = 'faq';                       // faq | guide | about
@@ -3401,6 +3423,8 @@ const GUIDE_STEPS = [
 ];
 
 const CHANGELOG = [
+  { v: '1.3.0b', d: '2026-11-14', items: ['修掉接入广告后打开就闪退的问题：第三方库的启动项改由我们自己初始化，出错只降级不闪退', '万一还有问题：连续两次打不开会自动关掉广告，下次启动会告诉你原因'] },
+  { v: '1.2.1', d: '2026-11-14', items: ['无广告版本（1.2 线）：内容与 1.3 一致，但不含任何广告和广告依赖'] },
   { v: '1.3.0a', d: '2026-11-14', items: ['修掉接入广告后打开就闪退的问题（第三方库的初始化配置没合并完整）', '崩溃记录提前到最早时机，万一还有问题，下次打开会弹出原因'] },
   { v: '1.3.0a', d: '2026-11-14', items: ['修掉接入广告后打开就闪退的问题（第三方库的初始化配置没合并完整）', '崩溃记录提前到最早时机，万一还有问题，下次打开会弹出原因'] },
   { v: '1.3.0', d: '2026-11-14', items: ['接入谷歌 AdMob 开屏广告', '开屏只在冷启动展示一次，关闭后不再打扰；从后台切回来不会弹', '需要手机装有 Google Play 服务才能出广告，没有的话静默跳过，功能完全不受影响'] },

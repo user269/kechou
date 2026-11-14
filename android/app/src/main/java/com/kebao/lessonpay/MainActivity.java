@@ -69,6 +69,9 @@ public class MainActivity extends Activity {
         CrashLog.install(this);
         CrashLog.resetSteps(this);
         CrashLog.step(this, "onCreate(" + Build.VERSION.SDK_INT + ")");
+        // 能走到这里说明启动链没崩（Provider、Application 都过了），
+        // 告诉守护进程这一次是成功的，否则会累积到「安全模式」
+        BootGuard.markLaunched(this);
 
         setupWindow();
         registerBackCallback();
@@ -106,8 +109,13 @@ public class MainActivity extends Activity {
         adHost = new AdHost(this);
         root.addView(adHost.view());
 
-        // AdMob 初始化（异步）。没有 Google Play 服务的设备会失败，这里静默跳过
-        Ads.init(this);
+        // AdMob 初始化（异步）。没有 GMS 的设备会失败，这里静默跳过。
+        // 安全模式、或上次因为广告起不来时，直接不碰。
+        if (App.inSafeMode() || BootGuard.adsOff(this)) {
+            CrashLog.step(this, "广告已跳过（安全模式 / 上次启动失败）");
+        } else {
+            Ads.init(this);
+        }
 
         setContentView(root);
         CrashLog.step(this, web == null ? "WebView 不可用" : "WebView 已创建");

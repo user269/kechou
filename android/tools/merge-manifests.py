@@ -25,6 +25,19 @@ A = "{%s}" % ANDROID_NS
 APP_CHILDREN = ("activity", "activity-alias", "service", "receiver", "provider",
                 "meta-data", "uses-library", "uses-native-library")
 
+# 第三方 SDK 常常声明一个 ContentProvider 来做"自动初始化"。这类 Provider 在
+# Application.onCreate **之前** 由系统实例化，里面抛任何异常都表现为"打开就闪退"，
+# 而且崩溃记录、崩溃弹窗全都来不及执行（onCreate 根本没进）。
+#
+# 所以这里不放它们，改由我们自己的代码在 try/catch 里显式初始化：
+# 出问题只降级，不会把启动链卡死。
+SKIP_COMPONENTS = {
+    "androidx.startup.InitializationProvider":
+        "改由 Ads.init 显式调 WorkManager.initialize（包了 try/catch）",
+    "com.google.android.gms.ads.MobileAdsInitProvider":
+        "改由 Ads.init 显式调 MobileAds.initialize（包了 try/catch）",
+}
+
 
 def name_of(el):
     return el.get(A + "name") or el.get(A + "authorities") or ""
@@ -108,6 +121,10 @@ def main():
 
     for tag, name, node, lib in comps:
         key = (tag, name)
+        skip = SKIP_COMPONENTS.get(name)
+        if skip and tag in ("provider", "service", "receiver"):
+            print("    - 跳过 <%s %s>（来自 %s）：%s" % (tag, name, lib, skip))
+            continue
         existing = existing_comps.get(key)
         if existing is not None:
             # 同名组件不能整体丢掉：不同库会往同一个 <provider> 里挂各自的 <meta-data>。

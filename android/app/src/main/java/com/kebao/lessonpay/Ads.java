@@ -26,6 +26,9 @@ final class Ads {
 
     private static final String TAG = "KebaoAds";
 
+    /** 这个构建是否内置了广告 SDK；无广告构建里是 false，前端据此隐藏相关入口 */
+    static final boolean SUPPORTED = true;
+
     static final String APP_ID = "ca-app-pub-4703913003378934~4670206775";
     static final String UNIT_SPLASH = "ca-app-pub-4703913003378934/8982867205";
 
@@ -48,6 +51,7 @@ final class Ads {
     /** 冷启动时调用一次。失败只记日志，绝不抛给调用方 */
     static void init(Context ctx) {
         if (initialized || initFailed) return;
+        ensureWorkManager(ctx);
         try {
             MobileAds.initialize(ctx, status -> {
                 initialized = true;
@@ -58,6 +62,24 @@ final class Ads {
             // 没有 GMS、被裁剪过的系统、类找不到——都走这里
             initFailed = true;
             Log.w(TAG, "MobileAds 不可用：" + describe(t));
+        }
+    }
+
+    /**
+     * AdMob 内部会用 WorkManager 做些后台任务。它原本靠 androidx.startup 的
+     * ContentProvider 自动初始化，而那个 Provider 已经被我们剔除了（见
+     * tools/merge-manifests.py），所以在这里补一次。
+     *
+     * 放在这里而不是 Application 里，是为了让「无广告」的构建根本不出现这个依赖。
+     */
+    private static void ensureWorkManager(Context ctx) {
+        try {
+            androidx.work.WorkManager.initialize(
+                    ctx, new androidx.work.Configuration.Builder().build());
+            Log.i(TAG, "WorkManager 已初始化");
+        } catch (Throwable t) {
+            // 重复初始化抛 IllegalStateException，忽略即可；真起不来只是少一条后台任务
+            Log.w(TAG, "WorkManager 初始化失败：" + describe(t));
         }
     }
 

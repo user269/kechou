@@ -90,7 +90,14 @@ if mode == 'web':
 
 elif mode == 'apk':
     vname = vcode = None
-    for line in open(os.path.join('android', 'build.sh'), encoding='utf-8'):
+    # 优先读构建产物里记下的实际版本：两条版本线共用一份 build.sh，
+    # 变量可能来自环境变量覆盖，直接解析源码会读错
+    vfile = os.path.join('android', 'build', 'version.txt')
+    if os.path.isfile(vfile):
+        parts = open(vfile, encoding='utf-8').read().split()
+        if len(parts) >= 2:
+            vname, vcode = parts[0], int(parts[1])
+    for line in ([] if vname else open(os.path.join('android', 'build.sh'), encoding='utf-8')):
         m = re.match(r'\s*VERSION_NAME="([^"]+)"', line)
         if m:
             vname = m.group(1)

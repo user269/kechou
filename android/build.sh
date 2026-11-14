@@ -24,8 +24,12 @@ OUT="build"
 KS="keystore.jks"
 # 签名密码不写进仓库：优先读环境变量，其次读本地 android/.keystore-pass
 KS_PASS="${KS_PASS:-$(cat .keystore-pass 2>/dev/null || true)}"
-VERSION_NAME="1.3.0a"
-VERSION_CODE="32"
+# 版本号可由环境变量覆盖，用来从同一份代码产出两条线：
+#   1.3.x 带广告（默认）       bash build.sh
+#   1.2.x 无广告（维护线）      VERSION_NAME=1.2.1 VERSION_CODE=26 WITH_ADS=0 bash build.sh
+VERSION_NAME="${VERSION_NAME:-1.3.0b}"
+VERSION_CODE="${VERSION_CODE:-33}"
+WITH_ADS="${WITH_ADS:-1}"       # 1 = 带 AdMob，0 = 完全不含广告依赖
 TARGET_SDK="36"
 COMPILE_SDK="37"
 APK_NAME="课酬-${VERSION_NAME}.apk"
@@ -59,7 +63,9 @@ LIB_JARS=()
 LIB_NAMES=()
 MANIFEST_HINTS=()
 
-if [ -d "$LIBS" ]; then
+if [ "$WITH_ADS" != "1" ]; then
+  echo "    无广告构建：不引入任何第三方库"
+elif [ -d "$LIBS" ]; then
   for f in "$LIBS"/*.jar; do
     [ -f "$f" ] || continue
     cp "$f" "$JARS/"
@@ -141,11 +147,18 @@ else
   echo "    没有 AAR，跳过"
 fi
 
+# 清单里写死的 versionCode/versionName 会盖掉 aapt2 的命令行参数，
+# 而两条版本线共用一份清单，所以这里直接把值替换掉，保证包名与版本对得上。
+MANIFEST_FINAL="$OUT/AndroidManifest.final.xml"
+sed -e 's|android:versionCode="[0-9]*"|android:versionCode="'"$VERSION_CODE"'"|' \
+    -e 's|android:versionName="[^"]*"|android:versionName="'"$VERSION_NAME"'"|' \
+    "$MANIFEST_TO_USE" > "$MANIFEST_FINAL"
+
 echo "==> 6/11 链接资源与清单 (aapt2 link)"
 "$BT_POSIX/aapt2.exe" link \
   -o "$OUT/base.apk" \
   -I "$PLATFORM_WIN" \
-  --manifest "$MANIFEST_TO_USE" \
+  --manifest "$MANIFEST_FINAL" \
   --java "$OUT/gen" \
   -A "$APP/assets" \
   --min-sdk-version 23 \
@@ -162,6 +175,13 @@ for j in "${LIB_JARS[@]:-}"; do
 done
 # 按目录递归收源码：以后拆包、加子目录都不用改脚本
 find "$APP/java" -name '*.java' > "$OUT/srclist.txt"
+if [ "$WITH_ADS" != "1" ]; then
+  # 无广告构建：把 Ads.java 换成 noads/ 里的空实现，其余源码不变
+  grep -v "/Ads.java$" "$OUT/srclist.txt" > "$OUT/srclist.tmp" || true
+  find "app/src/noads/java" -name '*.java' >> "$OUT/srclist.tmp"
+  mv "$OUT/srclist.tmp" "$OUT/srclist.txt"
+  echo "    无广告构建：使用 noads/Ads.java 占位实现"
+fi
 "$JDK_POSIX/bin/javac.exe" -encoding UTF-8 -source 8 -target 8 -nowarn \
   -bootclasspath "$PLATFORM_WIN" \
   -classpath "$CP" \
@@ -263,6 +283,9 @@ fi
 echo
 echo "==> 校验 16KB 页兼容性"
 python tools/check-16k.py "$OUT/$APK_NAME" --zipalign "$BT_POSIX/zipalign.exe"
+
+# 把这次实际用的版本写下来：release.sh 读这个，而不是去解析脚本里的变量
+printf '%s %s %s\n' "$VERSION_NAME" "$VERSION_CODE" "$WITH_ADS" > "$OUT/version.txt"
 
 echo
 echo "构建完成：$PWD/$OUT/$APK_NAME"

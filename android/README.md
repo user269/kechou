@@ -194,6 +194,56 @@ Google Maven / Maven Central / 阿里云 → 下载 aar/jar。
 - banner：目前 `AdHost.createBanner()` 只返回占位视图——把 AdMob 的 `AdView` 建好
   `return` 出来，同时把 `AdHost.sdkReady()` 改成 `true`，前端的「广告位预览」入口会自动消失
 
+## 两条版本线（带广告 / 无广告）
+
+同一份代码，靠构建参数产出两种包：
+
+```bash
+# 1.3.x 起：带 AdMob 开屏广告（主通道）
+bash android/build.sh
+
+# 1.2.x 起：完全不含广告与广告依赖（维护线，约 419KB / 1 个 dex）
+VERSION_NAME=1.2.1 VERSION_CODE=26 WITH_ADS=0 bash android/build.sh
+```
+
+`WITH_ADS=0` 时构建脚本做三件事：不收集 `libs/` 里的任何第三方库、把 `Ads.java` 换成
+`app/src/noads/java/.../Ads.java` 的空实现（签名完全一致，调用点不用改）、清单里不带任何
+AdMob 组件。前端通过 `adInfo()` 里的 `ads` 字段知道当前包有没有广告，无广告包里
+「广告位预览」入口会自动隐藏。
+
+> 注意：热更新是两条线共用的。1.2.x 的包如果联网更新了网页资源，界面会变成 1.3 的样子
+> （功能一致、仍然没有广告），但页脚版本号会显示网页版本。要严格对齐就别让无广告包更新网页。
+
+## 第三方库的启动期 Provider 为什么被剔除
+
+AdMob 和 androidx 都会声明 ContentProvider 来做「自动初始化」。这类 Provider 由系统在
+`Application.attachBaseContext` 之后、`onCreate` 之前实例化——里面抛任何异常，表现都是
+**打开就闪退**，而且崩溃记录、崩溃弹窗全都来不及执行（`onCreate` 根本没进），
+用户只能卸载，我们连堆栈都拿不到。
+
+所以 `tools/merge-manifests.py` 里有一张 `SKIP_COMPONENTS` 表，把这些 Provider 从最终清单里剔掉：
+
+| 被剔除的 Provider | 谁来初始化 |
+|---|---|
+| `androidx.startup.InitializationProvider` | `Ads.init` 里显式 `WorkManager.initialize(...)` |
+| `com.google.android.gms.ads.MobileAdsInitProvider` | `Ads.init` 里显式 `MobileAds.initialize(...)` |
+
+两处都包在 `try/catch` 里，失败只记日志——广告加载不出来可以接受，起不来不行。
+`AdActivity` / `AdService` 这些**运行期**才用到的组件仍然保留。
+
+### 启动守护（BootGuard）
+
+万一还有别的东西在启动链上崩，用户会陷入「装了打不开、又看不到原因」的死循环。
+`BootGuard` 的规则很简单：
+
+- `attachBaseContext` 里把「启动次数」加一
+- 真的走到 `MainActivity.onCreate` 才把「成功次数」同步过去
+- 连续两次没走到界面 → 判定启动链有问题，下一次启动进入**安全模式**：
+  跳过 WorkManager 和广告初始化，先保证能用
+- 换了新版本会重新给一次机会（`versionCode` 变了就清零）
+
+崩溃堆栈仍然由 `CrashLog` 记录（在 `attachBaseContext` 里就装好），下次启动弹窗展示。
+
 ## 广告位（banner 只搭了架子，没接真实广告）
 
 代码里有广告位，但**没有接入任何广告平台**——接穿山甲/优量汇需要：开发者账号、

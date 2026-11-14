@@ -1,17 +1,18 @@
 {
-  "versionCode": 32,
-  "versionName": "1.3.0a",
+  "versionCode": 33,
+  "versionName": "1.3.0b",
   "notes": [
-    "修掉接入广告后打开就闪退的问题（第三方库的初始化配置没合并完整）",
-    "崩溃记录提前到最早时机：万一还有问题，下次打开会弹出原因，点复制发我即可"
+    "修掉接入广告后打开就闪退的问题（第三方库的自动初始化改由我们自己控制）",
+    "加了启动守护：万一连续两次打不开，会自动关掉广告保证能用，并告诉你原因",
+    "广告仍然只在冷启动展示一次；没有 Google 服务的手机完全不受影响"
   ],
   "apk": {
-    "url": "https://github.com/user269/kechou/releases/download/v1.3.0a/kebao-1.3.0a.apk",
-    "size": 5780857,
+    "url": "https://github.com/user269/kechou/releases/download/v1.3.0b/kebao-1.3.0b.apk",
+    "size": 5780858,
     "mirrors": [
-      "https://ghfast.top/https://github.com/user269/kechou/releases/download/v1.3.0a/kebao-1.3.0a.apk",
-      "https://gh-proxy.com/https://github.com/user269/kechou/releases/download/v1.3.0a/kebao-1.3.0a.apk",
-      "https://ghproxy.net/https://github.com/user269/kechou/releases/download/v1.3.0a/kebao-1.3.0a.apk"
+      "https://ghfast.top/https://github.com/user269/kechou/releases/download/v1.3.0b/kebao-1.3.0b.apk",
+      "https://gh-proxy.com/https://github.com/user269/kechou/releases/download/v1.3.0b/kebao-1.3.0b.apk",
+      "https://ghproxy.net/https://github.com/user269/kechou/releases/download/v1.3.0b/kebao-1.3.0b.apk"
     ]
   },
   "web": {
@@ -20,5 +21,5 @@
     "size": 0,
     "notes": []
   },
-  "updated": "2026-11-14T02:26:58Z"
+  "updated": "2026-11-14T03:35:34Z"
 }
