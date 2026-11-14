@@ -108,7 +108,14 @@ def main():
 
     for tag, name, node, lib in comps:
         key = (tag, name)
-        if key in existing_comps:
+        existing = existing_comps.get(key)
+        if existing is not None:
+            # 同名组件不能整体丢掉：不同库会往同一个 <provider> 里挂各自的 <meta-data>。
+            # 典型例子是 androidx.startup.InitializationProvider——provider 本身在
+            # startup 库里，WorkManagerInitializer 的 meta-data 却在 work-runtime 库里。
+            # 只留一个就等于 WorkManager 永不初始化，AdMob 一用就抛异常（而且是崩在
+            # SDK 自己的线程里，捕获不到）。
+            added_c += _merge_children(existing, node, pkg, lib)
             continue
         # ${applicationId} 占位符必须换成真实包名，否则 provider 授权会撞
         clone = _clone(node, pkg)
@@ -122,9 +129,26 @@ def main():
     return 0
 
 
+def _merge_children(dst, src, pkg, lib):
+    """把 src 的子节点补进 dst（按 tag+name 去重），返回新增个数。"""
+    have = {(c.tag, name_of(c)) for c in dst}
+    n = 0
+    for child in src:
+        key = (child.tag, name_of(child))
+        if key in have:
+            continue
+        dst.append(_clone(child, pkg))
+        have.add(key)
+        n += 1
+        print("    + %s/%s 里的 <%s %s>（来自 %s）" % (dst.tag, name_of(dst), child.tag, name_of(child), lib))
+    return n
+
+
 def _clone(node, pkg):
-    """复制节点并把 ${applicationId} 换掉。"""
-    new = ET.Element(node.tag, dict(node.attrib))
+    """复制节点并做两件事：换掉 ${applicationId}、去掉 tools: 构建指令。"""
+    tools = "{%s}" % TOOLS_NS
+    attrs = {k: v for k, v in node.attrib.items() if not k.startswith(tools)}
+    new = ET.Element(node.tag, attrs)
     for k, v in list(new.attrib.items()):
         if "${applicationId}" in v:
             new.set(k, v.replace("${applicationId}", pkg))

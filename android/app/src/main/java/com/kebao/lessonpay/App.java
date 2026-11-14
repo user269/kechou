@@ -11,9 +11,23 @@ import android.app.Application;
  */
 public class App extends Application {
 
+    /**
+     * 在 attachBaseContext 里就装好：ContentProvider（比如 androidx.startup 那套）
+     * 的初始化发生在 onCreate 之前，崩在那里的话 onCreate 根本来不及执行，
+     * 日志就丢了。为了能拿到启动期的崩溃，只能更早。
+     */
+    @Override
+    protected void attachBaseContext(android.content.Context base) {
+        super.attachBaseContext(base);
+        try {
+            CrashLog.install(this);
+        } catch (Throwable ignored) {
+            // 崩溃记录本身不能成为崩溃原因
+        }
+    }
+
     @Override
     public void onCreate() {
         super.onCreate();
-        CrashLog.install(this);
     }
 }
