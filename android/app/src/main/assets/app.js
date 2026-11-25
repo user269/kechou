@@ -220,6 +220,24 @@ function holidaySummary() {
   const work = list.length - off;
   return `${ys.join('、')} 年 · ${off} 天假${work ? ` · ${work} 天补班` : ''}`;
 }
+/**
+ * 计费判定：这节课落在假期（或半天假放学之后）就不计课时费。
+ *
+ * 与 holidayBlocks 的区别：那条是「排课要不要跳过」，只处理今天以后；
+ * 这条是算钱，历史日期一样要判——否则上个月假期里的课会一直算在总额里。
+ * 补班日（kind=work）是工作日，照常计费。
+ * 单节课勾了「照常计费」（payHoliday）的，按用户说了算。
+ */
+function holidayPaysOff(l, force) {
+  if (!force && (!state.settings || state.settings.holidayNoPay === false)) return false;
+  if (!l || !l.date) return false;
+  if (l.payHoliday) return false;
+  const h = holidayOn(l.date);
+  if (!h || h.kind === 'work') return false;
+  if (!h.half) return true;
+  return getPeriod(l.period).start >= h.half;   // 半天：放学之后的节次
+}
+
 /** 用于排课的判断：今天及以后才自动跳过，历史课程不动 */
 function holidayBlocks(dateStr, periodNo) {
   if (state.settings.holidaySkip === false) return false;
@@ -601,8 +619,56 @@ function moneyPlain(n) {
 function round2(n) { return Math.round(Number(n || 0) * 100) / 100; }
 
 /** 计价单位的后缀：¥36/小时、¥40/节、¥45/人 */
+/** 单位短名，用于「¥50/节」这类紧凑位置 */
+function unitShort(unit) {
+  if (unit === 'hour') return '时';
+  if (unit === 'student') return '人';
+  if (unit === 'day') return '天';
+  if (unit === 'flat') return '次';
+  return '节';
+}
+/** 单位全名，用在说明文字里 */
+function unitName(unit) {
+  if (unit === 'hour') return '小时';
+  if (unit === 'student') return '人';
+  if (unit === 'day') return '天';
+  if (unit === 'flat') return '次';
+  return '节';
+}
+/** 计价方式的中文说法 */
+function unitPlanName(unit) {
+  if (unit === 'hour') return '按时长';
+  if (unit === 'student') return '按人数';
+  if (unit === 'day') return '按天';
+  if (unit === 'flat') return '按次';
+  return '按节次';
+}
+/**
+ * 「一天 / 一次」这类特殊课时：钱既不看节次也不看分钟。
+ * 运动会按天、培训按次，是老师最容易按错单价的两类。
+ */
+function isSpanUnit(unit) {
+  return unit === 'day' || unit === 'flat';
+}
 function unitSuffix(unit) {
-  return unit === 'hour' ? '/小时' : unit === 'student' ? '/人' : '/节';
+  return '/' + unitName(unit);
+}
+
+/** 特殊课时的数量：没填按 1，最小 0.5（半天算半价），上限 60 */
+function spanOf(l) {
+  const v = Number(l && l.times);
+  if (!Number.isFinite(v) || v <= 0) return 1;
+  return Math.min(60, Math.round(v * 100) / 100);
+}
+
+/** 一节课的「数量」文案：时长 / 人数 / 天数 / 次数 / 节 */
+function lessonQtyLabel(l, t) {
+  const u = (t && t.unit) || 'period';
+  if (u === 'hour') return `${Number(l.dur) || Number(state.settings.defaultDur) || 45}分钟`;
+  if (u === 'student') return `${Number(l.students) || 1}人`;
+  if (u === 'day') return `${spanOf(l)}天`;
+  if (u === 'flat') return `${spanOf(l)}次`;
+  return '1节';
 }
 /** 「数量 × 单价」的展示式。按时长的课用真实分钟数表示，
  *  避免出现「×1.17 小时」这种近似值（36×1.17 会算出 42.12）。 */
@@ -611,7 +677,8 @@ function priceExpr(unitPrice, qty, unitLabel, dur) {
   if (unitLabel === '小时') return `${Number(dur) || state.settings.defaultDur || 45} 分钟 × ${p}/小时`;
   if (unitLabel === '人') return `${qty} 人 × ${p}/人`;
   if (unitLabel === '人·节') return `${qty} 人·节 × ${p}/人·节`;
-  return `${qty} 节 × ${p}/节`;
+  const u = unitLabel || '节';
+  return `${qty} ${u} × ${p}/${u}`;
 }
 
 /* ---------------- 默认数据 ---------------- */
@@ -788,6 +855,7 @@ function defaultSettings() {
     termStart: '',             // 学期第一周的周一（用于周次编号与单双周判定）
     termWeeks: 20,             // 学期总周数
     holidaySkip: true,         // 排课时跳过法定假日（半天只排到放学时刻）
+    holidayNoPay: true,        // 假期当天的课不计课时费（可在设置里关掉，也可单节课覆盖）
     holidaySource: '',         // 自定义节假日同步源（留空用内置候选）
     // 调休规则：某类周的某天只上半天，被截掉的课平移到同周另一天
     makeup: {
@@ -866,7 +934,7 @@ function repairState() {
       else t.price = Number(t.price);
       if (!Number.isFinite(Number(t.factor)) || Number(t.factor) <= 0) { t.factor = 1; }
       else t.factor = Number(t.factor);
-      if (!['period', 'hour', 'student'].includes(t.unit)) t.unit = 'period';
+      if (!['period', 'hour', 'student', 'day', 'flat'].includes(t.unit)) t.unit = 'period';
       kept.push(t);
     });
     if (!kept.length) { s.types = defaultTypes(); note('课程类型全部不可用，已恢复默认'); }
@@ -930,6 +998,14 @@ function repairState() {
       if (l.dur != null && (!Number.isFinite(Number(l.dur)) || Number(l.dur) <= 0)) {
         l.dur = Number(s.settings.defaultDur) || 45;
         badDur++;
+      }
+      // 按天/按次的数量：非数字或超范围夹回来，否则金额会算出天价
+      if (l.times != null) {
+        const tv = Number(l.times);
+        if (!Number.isFinite(tv) || tv <= 0 || tv > 60) {
+          l.times = clamp(Number.isFinite(tv) ? tv : 1, 0.5, 60);
+          badDur++;
+        }
       }
       if (!LESSON_STATUS.includes(l.status)) { l.status = 'normal'; badStatus++; }
       return l;
@@ -1275,6 +1351,14 @@ function calcLesson(l) {
   } else if (t.unit === 'student') {
     qty = Number(l.students) || 1;
     unitLabel = '人';
+  } else if (t.unit === 'day') {
+    // 运动会、监考、值周：按天给钱，半天填 0.5
+    qty = spanOf(l);
+    unitLabel = '天';
+  } else if (t.unit === 'flat') {
+    // 培训、教研、会议：按次给钱，与时长无关
+    qty = spanOf(l);
+    unitLabel = '次';
   }
 
   const base = unitPrice * qty * (Number(t.factor) || 1);
@@ -1286,6 +1370,10 @@ function calcLesson(l) {
     if (hit) { classFactor = Number(hit.factor) || 1; classKey = hit.key; }
   }
 
+  // 假期（含半天假放学后）不计课时费：金额归零，但仍把数量、单价带出去，
+  // 界面上可以显示「本该多少」，用户才知道自己为什么没拿到这笔钱。
+  const holidayOff = holidayPaysOff(l);
+
   return {
     type: t,
     qty: round2(qty),      // 展示用（70 分钟 → 1.17 小时）
@@ -1295,7 +1383,8 @@ function calcLesson(l) {
     base: round2(base),
     classFactor,
     classKey,
-    subtotal: round2(base * classFactor),
+    holidayOff,
+    subtotal: holidayOff ? 0 : round2(base * classFactor),
   };
 }
 
@@ -1368,6 +1457,7 @@ function calcExtend(l) {
 function lessonTotal(l) {
   if (l.status === 'canceled' || l.status === 'leave') return 0;
   const c = calcLesson(l);
+  if (c.holidayOff) return 0;          // 假期当天：连延长时段一起不计
   const e = calcExtend(l);
   return round2(c.subtotal + (e ? e.subtotal : 0));
 }
@@ -1378,8 +1468,10 @@ function lessonPreview(l) {
   const e = calcExtend(l);
   const total = round2(c.subtotal + (e ? e.subtotal : 0));
   let sub = `${c.type.name} ${money(c.unitPrice)}/${c.unitLabel}`;
+  if (isSpanUnit(c.type.unit)) sub += ` × ${spanOf(l)} ${c.unitLabel}`;
   if (e) sub += ` ＋ 延长 ${e.minutes} 分按${e.type.name} ${money(e.subtotal)}`;
   if (l.status === 'leave' || l.status === 'canceled') sub += ' · 不计费';
+  if (c.holidayOff) sub += ' · 假期不计费';
   return { total, sub };
 }
 
@@ -1436,21 +1528,24 @@ function calcMonth(ym) {
     let unitPrice = r.unitPrice;
     let extra = 0, extraLabel = '', meta = '';
 
+    // 按天/按次不占「课时名额」：一次培训不该把后面的课顶进超课时；
+    // 假期当天的课同样不占——那天本来就没上课
+    const countsToward = !isSpanUnit(t.unit) && !r.holidayOff;
     if (scheme === 'tiered' && t.tierable) {
       const tier = pickTier(cumPeriods);
       unitPrice = Number(tier.price);
       meta = `阶梯第${tier.index}档`;
-      cumPeriods += 1;
+      if (countsToward) cumPeriods += 1;
     } else if (scheme === 'overtime' && t.tierable) {
       const from = Number(state.settings.overtimeFrom) || 0;
-      if (from > 0 && cumPeriods >= from) {
+      if (countsToward && from > 0 && cumPeriods >= from) {
         const rate = Number(state.settings.overtimeRate) || 1;
         extra = 1; // 标记
         extraLabel = `超课时 ×${rate}`;
       }
-      cumPeriods += 1;
+      if (countsToward) cumPeriods += 1;
     } else if (t.tierable) {
-      cumPeriods += 1;
+      if (countsToward) cumPeriods += 1;
     }
 
     let base = unitPrice * (r.qtyRaw != null ? r.qtyRaw : r.qty);
@@ -1458,7 +1553,9 @@ function calcMonth(ym) {
 
     // 延长部分按自习计价单独算，不参与阶梯/超课时（那两条针对整节课）
     const ex = calcExtend(l);
-    const extFee = ex ? ex.subtotal : 0;
+    let extFee = ex ? ex.subtotal : 0;
+    // 假期当天的课不进总额：金额归零，延长时段也一起归零
+    if (r.holidayOff) { base = 0; extFee = 0; }
     const subtotal = round2(base * r.classFactor + extFee);
 
     return {
@@ -1472,6 +1569,7 @@ function calcMonth(ym) {
       classFactor: r.classFactor,
       classKey: r.classKey,
       subtotal,
+      holidayOff: !!r.holidayOff,
       extend: ex,
       meta,
       extraLabel,
@@ -1507,14 +1605,22 @@ function calcMonth(ym) {
   const doneCount = rows.filter(r => r.done).length;
   const planCount = rows.length - doneCount;
 
-  // 总课时（按 45 分钟折算，延长的时间也算进总量）
-  const totalMinutes = rows.reduce((s, r) => s + (Number(r.lesson.dur) || 45) + (Number(r.lesson.extend) || 0), 0);
+  // 总课时（按 45 分钟折算，延长的时间也算进总量）。
+  // 按天/按次没有「几节课」的概念，不计入折合课时——
+  // 否则一次培训会被算成 1 个标准课时，「本学期多少课时」就虚了。
+  const totalMinutes = rows.reduce((s, r) => {
+    if (isSpanUnit(r.type.unit) || r.holidayOff) return s;
+    return s + (Number(r.lesson.dur) || 45) + (Number(r.lesson.extend) || 0);
+  }, 0);
   const km = round2(totalMinutes / 45);
+
+  const holidayOffCount = rows.filter(r => r.holidayOff).length;
 
   return {
     ym, rows, total, lessonTotal, doneFee, planFee, doneCount, planCount,
-    count: rows.length, km,
+    count: rows.length, km, holidayOffCount,
     extraRows: ex.rows, extraAdd: ex.add, extraSub: ex.sub,
+    holidayOffFee: round2(rows.filter(r => r.holidayOff).reduce((s, r) => s + r.base, 0)),
     byType: Object.values(byType).sort((a, b) => b.fee - a.fee),
   };
 }
@@ -1837,7 +1943,7 @@ function renderHome() {
                   ${l.note ? `<span>· ${esc(l.note)}</span>` : ''}
                 </div>
               </div>
-              <div class="l-fee">${canceled ? '—' : money(cost)}<small>${esc(typ.unit === 'hour' ? (l.dur || 45) + '分钟' : '1节')}${l.extend ? ` +${l.extend}分` : ''}</small></div>
+              <div class="l-fee">${canceled ? '—' : money(cost)}<small>${esc(lessonQtyLabel(l, typ))}${l.extend ? ` +${l.extend}分` : ''}${calcLesson(l).holidayOff ? ' · 假期' : ''}</small></div>
             </div>
           </div>
         </div>`;
@@ -2111,7 +2217,7 @@ function dayView(dateStr) {
                   ${l.status === 'leave' ? '<span class="tag rose">请假</span>' : ''}
                 </div>
               </div>
-              <div class="l-fee">${canceled ? '—' : money(cost)}<small>${esc(typ.unit === 'hour' ? (l.dur || 45) + '分钟' : typ.unit === 'student' ? (l.students || 1) + '人' : '1节')}${l.extend ? ` +${l.extend}分` : ''}</small></div>
+              <div class="l-fee">${canceled ? '—' : money(cost)}<small>${esc(lessonQtyLabel(l, typ))}${l.extend ? ` +${l.extend}分` : ''}${calcLesson(l).holidayOff ? ' · 假期' : ''}</small></div>
             </div>
           </div>
         </div>`;
@@ -2381,7 +2487,7 @@ function renderMasterEditor() {
     const on = t.id === d.typeId;
     return `<button class="period-cell ${on ? 'on' : ''}" data-act="master-pick-type" data-type="${t.id}"
       style="${on ? `background:${t.color};border-color:${t.color}` : ''}">
-      ${esc(t.name)}<small>${money(t.price)}/${t.unit === 'hour' ? '时' : t.unit === 'student' ? '人' : '节'}</small>
+      ${esc(t.name)}<small>${money(t.price)}/${unitShort(t.unit)}</small>
     </button>`;
   }).join('');
 
@@ -2665,6 +2771,12 @@ function renderHolidays() {
           <div class="ri" style="background:var(--brand-soft);color:var(--brand)">${ic('cal', 17)}</div>
           <div class="rc"><div class="t">排课时跳过假期</div><div class="s">半天只排到放学，补班日按指定星期上课</div></div>
           <div class="switch ${state.settings.holidaySkip !== false ? 'on' : ''}" data-act="hd-toggle-skip"></div>
+        </div>
+        <div class="row" style="border-top:1px solid var(--line-2)">
+          <div class="ri" style="background:var(--mint-soft);color:var(--mint)">${ic('wallet', 17)}</div>
+          <div class="rc"><div class="t">假期当天不计课时费</div>
+            <div class="s">${state.settings.holidayNoPay !== false ? '当天的课显示 0 元，不进月度总额' : '照常计价（适合假期补课有额外课时费的情况）'}</div></div>
+          <div class="switch ${state.settings.holidayNoPay !== false ? 'on' : ''}" data-act="hd-toggle-nopay"></div>
         </div>
       </div>
 
@@ -3055,7 +3167,7 @@ function renderPay() {
             <div class="t">${periodTime(r.lesson.period).start}</div>
             <div class="n">
               <div class="a">${esc(r.lesson.klass || '未命名')} <span class="tag" style="background:${r.type.color}15;color:${r.type.color}">${esc(r.type.name)}</span></div>
-              <div class="b">${esc(periodTime(r.lesson.period).name)} · ${priceExpr(r.unitPrice, r.qty, r.unitLabel, r.lesson.dur)}${r.classKey ? ` · ${esc(r.classKey)}×${r.classFactor}` : ''}${r.extraLabel ? ' · ' + esc(r.extraLabel) : ''}${r.extend ? ` · 含延长 ${r.extend.minutes} 分（按${esc(r.extend.type.name)} ${money(r.extend.subtotal)}）` : ''}</div>
+              <div class="b">${esc(periodTime(r.lesson.period).name)} · ${priceExpr(r.unitPrice, r.qty, r.unitLabel, r.lesson.dur)}${r.classKey ? ` · ${esc(r.classKey)}×${r.classFactor}` : ''}${r.extraLabel ? ' · ' + esc(r.extraLabel) : ''}${r.holidayOff ? ' · <b style="color:var(--rose)">假期不计费</b>' : ''}${r.extend ? ` · 含延长 ${r.extend.minutes} 分（按${esc(r.extend.type.name)} ${money(r.extend.subtotal)}）` : ''}</div>
             </div>
             <div class="f">${money(r.subtotal)}</div>
           </div>`).join('')}
@@ -3234,7 +3346,7 @@ function renderMine() {
 /* ============================================================
    帮助 · 说明 · 关于
    ============================================================ */
-const APP_VERSION = '1.3.0.0';
+const APP_VERSION = '1.3.0.1';
 const APP_BUILD = '2026-11-12';
 
 let helpTab = 'faq';                       // faq | guide | about
@@ -3353,6 +3465,14 @@ const FAQ_GROUPS = [
         go: { act: 'sync', text: '打开多设备同步' },
       },
       {
+        q: '运动会、监考、培训这种怎么记？',
+        a: `先在「课程类型与单价」里加两个类型，计价方式分别选 <b>按天</b> 与 <b>按次</b>：<br>
+            · 运动会、监考、值周 → <b>按天</b>：一天一个价，半天填 0.5 天<br>
+            · 培训、教研、会议 → <b>按次</b>：一次一个价，跟开多久无关<br>
+            录课的时候选上这个类型，金额就按天数/次数算；它们不计入「折合课时」，也不会把你顶进阶梯或超课时。`,
+        go: { act: 'types', text: '去加课程类型' },
+      },
+      {
         q: '跨月的课算哪个月？',
         a: `按<b>上课那天</b>算。比如 12 月 31 日的晚自习，就算 12 月，哪怕下课已经过了零点。<br>所以月初核对时，只要看那个月的账单就是完整的。`,
       },
@@ -3423,6 +3543,8 @@ const GUIDE_STEPS = [
 ];
 
 const CHANGELOG = [
+  { v: '1.3.0.1', d: '2026-11-25', items: ['新增「按天」「按次」计价：运动会、监考、值周按天，培训、教研、会议按次，不用再硬凑成几节课', '假期当天的课自动不计课时费（半天假只挡放学后的节次），补班日照常计；确实上了可在课程详情里点「这天照常计费」', '按天/按次不计入折合课时，也不会把后面的课顶进超课时'] },
+  { v: '1.2.0.1', d: '2026-11-25', items: ['无广告线同步 1.3.0.1 的全部改进'] },
   { v: '1.3.0.0', d: '2026-11-14', items: ['版本号改为四段（主.次.修订.构建），以后小修不再用字母后缀', '1.3 与 1.2 两条线各自独立更新：带广告的留在 1.3，不想看广告的停在 1.2', '修掉接入广告后打开就闪退的问题：第三方库的启动项改由我们自己初始化，连续两次打不开会自动关掉广告'] },
   { v: '1.2.0.0', d: '2026-11-14', items: ['无广告版本（1.2 线）：功能与 1.3 一致，但不含任何广告和广告依赖'] },
   { v: '1.3.0a', d: '2026-11-14', items: ['修掉接入广告后打开就闪退的问题（第三方库的初始化配置没合并完整）', '崩溃记录提前到最早时机，万一还有问题，下次打开会弹出原因'] },
@@ -4171,6 +4293,7 @@ function captureLessonForm() {
     draft.durAuto = v === periodMinutes(draft.period);
   }
   const st = $('#f-students'); if (st) draft.students = Number(st.value) || 1;
+  const tm = $('#f-times'); if (tm) draft.times = clamp(Number(tm.value) || 1, 0.5, 60);
   const ex = $('#f-extend'); if (ex) draft.extend = clamp(Number(ex.value) || 0, 0, 300);
 }
 
@@ -4231,7 +4354,7 @@ function renderLessonSheet() {
     const on = t.id === draft.typeId;
     return `<button class="period-cell ${on ? 'on' : ''}" data-act="lesson-pick-type" data-type="${t.id}"
       style="${on ? `background:${t.color};border-color:${t.color}` : ''}">
-      ${esc(t.name)}<small>${money(t.price)}/${t.unit === 'hour' ? '时' : t.unit === 'student' ? '人' : '节'}</small>
+      ${esc(t.name)}<small>${money(t.price)}/${unitShort(t.unit)}</small>
     </button>`;
   }).join('');
 
@@ -4246,6 +4369,7 @@ function renderLessonSheet() {
       ${durAuto ? '' : `<button class="btn ghost sm" data-act="lesson-dur-auto">跟随作息</button>`}
     </div>`;
 
+  const spanUnit = isSpanUnit(typ.unit);
   const extra = typ.unit === 'hour' ? `
     <div class="field">
       <div class="field-label">单次时长 <span class="hint">按 ¥${typ.price}/小时 计 · ${durAuto ? '跟随作息' : '已手动指定'}</span></div>
@@ -4254,6 +4378,14 @@ function renderLessonSheet() {
     <div class="field">
       <div class="field-label">学生人数 <span class="hint">按 ¥${typ.price}/人 计</span></div>
       <div class="input-suffix"><input class="input num" id="f-students" type="number" inputmode="numeric" value="${draft.students || 1}"><span class="sfx">人</span></div>
+    </div>` : spanUnit ? `
+    <div class="field">
+      <div class="field-label">${typ.unit === 'day' ? '天数' : '次数'}
+        <span class="hint">按 ¥${typ.price}/${unitName(typ.unit)} 计${typ.unit === 'day' ? '，半天填 0.5' : ''}</span></div>
+      <div class="input-suffix">
+        <input class="input num" id="f-times" type="number" inputmode="decimal" step="0.5" min="0.5" max="30"
+               value="${spanOf(draft)}"><span class="sfx">${unitName(typ.unit)}</span>
+      </div>
     </div>` : '';
 
   const et = extendType();
@@ -4382,6 +4514,7 @@ function saveLesson() {
       date: draft.date, period: draft.period, typeId: draft.typeId,
       klass: draft.klass.trim(), subject: draft.subject, note: draft.note,
       dur: draft.dur, durAuto: draft.durAuto !== false, students: draft.students, status: draft.status,
+      times: isSpanUnit((getType(draft.typeId) || {}).unit) ? spanOf(draft) : undefined,
       extend: Number(draft.extend) || 0,
       weekMode: wm,
     });
@@ -4400,6 +4533,7 @@ function saveLesson() {
       id: uid(), date: draft.date, period: draft.period, typeId: draft.typeId,
       klass: draft.klass.trim(), subject: draft.subject, note: draft.note,
       dur: draft.dur, durAuto: draft.durAuto !== false, students: draft.students, status: draft.status,
+      times: isSpanUnit((getType(draft.typeId) || {}).unit) ? spanOf(draft) : undefined,
       extend: Number(draft.extend) || 0,
       weekMode: wm,
     });
@@ -4429,6 +4563,7 @@ function addRepeatLessons(src, wm) {
       id: uid(), date: ds, period: src.period, typeId: src.typeId,
       klass: src.klass.trim(), subject: src.subject, note: src.note,
       dur: src.dur, durAuto: src.durAuto !== false, students: src.students, status: src.status,
+      times: src.times,
       extend: Number(src.extend) || 0,
       weekMode: wm,
       createdAt: Date.now(),
@@ -4446,6 +4581,8 @@ function openLessonMenu(id) {
   const c = calcLesson(l);
   const ex = calcExtend(l);
   const total = lessonTotal(l);
+  // 这天的课是不是被假期规则挡掉的（忽略单节覆盖，用来看「要不要给他那个开关」）
+  const holidayOff = holidayPaysOff({ ...l, payHoliday: false }, true);
   const tm = periodTime(l.period);
   const endD = lessonEnd(l);
   const tmEnd = `${pad2(endD.getHours())}:${pad2(endD.getMinutes())}`;
@@ -4473,10 +4610,19 @@ function openLessonMenu(id) {
           ${l.status === 'swapped' ? '<span class="tag amber">已调课</span>' : ''}
           ${l.status === 'leave' ? '<span class="tag rose">请假</span>' : ''}
           ${l.status === 'canceled' ? '<span class="tag rose">已取消</span>' : ''}
+          ${holidayOff && !l.payHoliday ? '<span class="tag amber">假期 · 不计费</span>' : ''}
+          ${l.payHoliday && holidayOff ? '<span class="tag mint">假期 · 照常计费</span>' : ''}
         </div>
         ${l.note ? `<div class="tiny muted" style="margin-top:10px">备注：${esc(l.note)}</div>` : ''}
       </div>
       <div class="rows" style="margin-bottom:12px">
+        ${holidayOff ? `
+        <div class="row" data-act="lesson-toggle-payholiday" data-id="${l.id}">
+          <div class="ri" style="background:${l.payHoliday ? 'var(--mint-soft)' : '#F2F4F7'};color:${l.payHoliday ? 'var(--mint)' : 'var(--ink-2)'}">${ic('wallet', 17)}</div>
+          <div class="rc"><div class="t">这天照常计费</div>
+            <div class="s">${l.payHoliday ? '当前按假期补课计费，关掉就不进总额' : '假期当天的课默认不计费，确实上了就打开'}</div></div>
+          <div class="switch ${l.payHoliday ? 'on' : ''}"></div>
+        </div>` : ''}
         <div class="row" data-act="lesson-edit" data-id="${l.id}">
           <div class="ri" style="background:var(--brand-soft);color:var(--brand)">${ic('edit', 17)}</div>
           <div class="rc"><div class="t">编辑课程</div></div>${ic('right', 15)}
@@ -4517,7 +4663,7 @@ function openBreakdown(id) {
         <div class="bd-line"><span class="k">课程</span><span class="v">${esc(l.klass)} · ${esc(typ.name)}</span></div>
         <div class="bd-line"><span class="k">时间</span><span class="v">${fmtMD(l.date)} ${esc(periodTime(l.period).name)}</span></div>
         <div class="divider" style="margin:8px 0"></div>
-        <div class="bd-line"><span class="k">计价方式</span><span class="v">${typ.unit === 'hour' ? '按时长' : typ.unit === 'student' ? '按人数' : '按节次'}</span></div>
+        <div class="bd-line"><span class="k">计价方式</span><span class="v">${unitPlanName(typ.unit)}</span></div>
         <div class="bd-line"><span class="k">单价 × 数量</span><span class="v">${priceExpr(row ? row.unitPrice : c.unitPrice, c.qty, c.unitLabel, l.dur)}</span></div>
         <div class="bd-line"><span class="k">小计</span><span class="v">${money(row ? row.base : round2((row ? row.unitPrice : c.unitPrice) * (c.qtyRaw != null ? c.qtyRaw : c.qty)))}</span></div>
         ${c.classFactor !== 1 ? `<div class="bd-line"><span class="k">班级系数 <span class="sub">${esc(c.classKey)}</span></span><span class="v">× ${c.classFactor}</span></div>` : ''}
@@ -5086,7 +5232,7 @@ function applySchemeSnapshot(snap) {
     const hit = state.types.find(x => x.id === t.id);
     const clean = {
       id: t.id, name: String(t.name || '未命名').slice(0, 12),
-      unit: ['period', 'hour', 'student'].includes(t.unit) ? t.unit : 'period',
+      unit: ['period', 'hour', 'student', 'day', 'flat'].includes(t.unit) ? t.unit : 'period',
       price: Number(t.price) || 0,
       factor: Number(t.factor) || 1,
       color: /^#[0-9a-fA-F]{6}$/.test(String(t.color)) ? t.color : '#3B5BFD',
@@ -5198,7 +5344,7 @@ function openSchemeSheet(id) {
         ${hit.snap.types.map(t => `
           <div class="row" style="padding:10px 13px">
             <div class="rc"><div class="t" style="font-size:13.5px">${esc(t.name)}</div></div>
-            <div class="rv">${money(t.price)}<span class="tiny muted">/${t.unit === 'hour' ? '时' : t.unit === 'student' ? '人' : '节'}</span></div>
+            <div class="rv">${money(t.price)}<span class="tiny muted">/${unitShort(t.unit)}</span></div>
           </div>`).join('')}
       </div>
       <button class="btn outline" data-act="scheme-share-one" data-id="${esc(id)}" style="margin-top:14px">${ic('upload', 16)} 复制分享码</button>
@@ -5477,9 +5623,9 @@ function openTypesSheet() {
           <div class="ri" style="background:${t.color}18;color:${t.color}">${ic(typeIcon(t), 17)}</div>
           <div class="rc">
             <div class="t">${esc(t.name)}</div>
-            <div class="s">${t.unit === 'hour' ? '按时长' : t.unit === 'student' ? '按人数' : '按节次'} · 系数 ×${t.factor || 1}${t.tierable ? ' · 参与阶梯' : ''}</div>
+            <div class="s">${unitPlanName(t.unit)} · 系数 ×${t.factor || 1}${t.tierable ? ' · 参与阶梯' : ''}</div>
           </div>
-          <div class="rv" style="color:${t.color}">${money(t.price)}<span class="tiny muted">/${t.unit === 'hour' ? '时' : t.unit === 'student' ? '人' : '节'}</span></div>
+          <div class="rv" style="color:${t.color}">${money(t.price)}<span class="tiny muted">/${unitShort(t.unit)}</span></div>
           ${ic('right', 15)}
         </div>`).join('')}
       <button class="btn outline" data-act="add-type" style="margin-top:6px">${ic('plus', 16)} 新增课程类型</button>
@@ -5510,11 +5656,19 @@ function openTypeEditor(typeId) {
             <button class="${t.unit === 'hour' ? 'on' : ''}" data-act="type-unit" data-unit="hour">按时长</button>
             <button class="${t.unit === 'student' ? 'on' : ''}" data-act="type-unit" data-unit="student">按人数</button>
           </div>
+          <div class="segmented" style="margin-top:8px">
+            <button class="${t.unit === 'day' ? 'on' : ''}" data-act="type-unit" data-unit="day">按天</button>
+            <button class="${t.unit === 'flat' ? 'on' : ''}" data-act="type-unit" data-unit="flat">按次</button>
+          </div>
+          <div class="tiny muted" style="margin-top:6px;line-height:1.6">
+            运动会、监考、值周这类整天投入的选「按天」：一天一个价，半天填 0.5 天。<br>
+            培训、教研、会议这类按场次结算的选「按次」：一次一个价，与多久无关。
+          </div>
         </div>
         <div class="input-row">
           <div class="field">
             <div class="field-label">单价</div>
-            <div class="input-suffix"><input class="input num" id="t-price" type="number" value="${t.price}"><span class="sfx">元</span></div>
+            <div class="input-suffix"><input class="input num" id="t-price" type="number" value="${t.price}"><span class="sfx">元/${unitName(t.unit)}</span></div>
           </div>
           <div class="field">
             <div class="field-label">系数</div>
@@ -6631,6 +6785,9 @@ function monthStatementText(ym) {
     });
   }
   L.push(`课程　　${m.count} 节（已完成 ${m.doneCount} 节，待上 ${m.planCount} 节）`);
+  if (m.holidayOffCount) {
+    L.push(`假期　　 ${m.holidayOffCount} 节未计费（放假当天）`);
+  }
   L.push(`已完成　${money(m.doneFee)}`);
   if (m.planCount) L.push(`待上　　${money(m.planFee)}`);
   L.push(`折课时　${m.km} 节（按 45 分钟折算）`);
@@ -6639,7 +6796,7 @@ function monthStatementText(ym) {
     L.push('');
     L.push('按类型');
     m.byType.forEach(x => {
-      const cnt = x.count ? `${x.count} 节` : '仅延长';
+      const cnt = x.count ? `${x.count} ${isSpanUnit(x.unit) ? unitName(x.unit) : '节'}` : '仅延长';
       L.push(`　${x.name}　${cnt}　${money(x.fee)}`);
     });
   }
@@ -6650,7 +6807,8 @@ function monthStatementText(ym) {
     m.rows.forEach(r => {
       const pt = periodTime(r.lesson.period);
       L.push(`　${r.lesson.date.slice(5)} ${weekdayCN(r.lesson.date)} ${pt.name}　`
-        + `${r.lesson.klass || '未命名'}·${r.type.name}　${money(r.subtotal)}`);
+        + `${r.lesson.klass || '未命名'}·${r.type.name}`
+        + `${isSpanUnit(r.type.unit) ? `（${lessonQtyLabel(r.lesson, r.type)}）` : ''}　${money(r.subtotal)}`);
     });
   }
 
@@ -8008,6 +8166,13 @@ document.addEventListener('click', e => {
     case 'hd-del': deleteHolidayDraft(); break;
     case 'hd-sync': doSyncHolidays(); break;
     case 'hd-reset': resetHolidayData(); break;
+    case 'hd-toggle-nopay':
+      state.settings.holidayNoPay = state.settings.holidayNoPay === false;
+      save();
+      renderHolidays();
+      render();
+      toast(state.settings.holidayNoPay !== false ? '假期当天不再计课时费' : '假期当天照常计价', 'check');
+      break;
     case 'hd-toggle-skip':
       state.settings.holidaySkip = state.settings.holidaySkip === false;
       save();
@@ -8063,6 +8228,16 @@ document.addEventListener('click', e => {
       openLessonSheet({ date: el.dataset.date, period: el.dataset.period });
       break;
     case 'lesson-menu': openLessonMenu(id); break;
+    case 'lesson-toggle-payholiday': {
+      const l = state.lessons.find(x => x.id === id);
+      if (!l) break;
+      if (l.payHoliday) delete l.payHoliday; else l.payHoliday = true;
+      save();
+      render();
+      openLessonMenu(id);
+      toast(l.payHoliday ? '这节按假期补课计费' : '这节恢复为不计费', 'check');
+      break;
+    }
     case 'lesson-edit': openLessonSheet({ id }); break;
     case 'lesson-swap': openSwapTarget(id); break;
     case 'lesson-leave': {
@@ -8557,7 +8732,7 @@ document.addEventListener('change', e => {
 
 // 时长/人数/延长变化时刷新计费预览
 document.addEventListener('input', e => {
-  if ((e.target.id === 'f-dur' || e.target.id === 'f-students' || e.target.id === 'f-extend') && draft) {
+  if ((e.target.id === 'f-dur' || e.target.id === 'f-students' || e.target.id === 'f-times' || e.target.id === 'f-extend') && draft) {
     captureLessonForm();
     const pv = lessonPreview({ ...draft });
     const el = $('#feePreview');
