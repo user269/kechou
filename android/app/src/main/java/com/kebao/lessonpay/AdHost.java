@@ -2,6 +2,7 @@ package com.kebao.lessonpay;
 
 import android.app.Activity;
 import android.graphics.Color;
+import android.util.Log;
 import android.graphics.drawable.GradientDrawable;
 import android.util.TypedValue;
 import android.view.Gravity;
@@ -54,7 +55,29 @@ final class AdHost {
     void setInsetBottom(int px) {
         if (insetBottom == px) return;
         insetBottom = px;
-        applyLayout();
+        onUi(this::applyLayout);
+    }
+
+    /**
+     * 所有改视图的动作都从这里走。
+     *
+     * 为什么必须有这一步：@JavascriptInterface 的方法由 WebView 在**桥接线程**上调用，
+     * 不是主线程。在那里 addView / setVisibility / setLayoutParams 会抛
+     * CalledFromWrongThreadException（"Only the original thread that created a view
+     * hierarchy can touch its views"），表现就是点一下「广告位预览」应用直接退出。
+     *
+     * 已经在主线程时 runOnUiThread 会立即执行，不会多一次消息循环。
+     */
+    private void onUi(Runnable r) {
+        if (act == null) return;
+        act.runOnUiThread(() -> {
+            try {
+                r.run();
+            } catch (Throwable t) {
+                // 广告位只是页面底部的一条占位，出问题也不能拖垮整个应用
+                Log.w("KebaoAd", "广告位布局失败：" + t);
+            }
+        });
     }
 
     /** 当前占用了多少高度（WebView 要让出这么多） */
@@ -81,25 +104,30 @@ final class AdHost {
      */
     boolean show(String pos) {
         position = pos == null ? "" : pos;
-        if (!sdkReady() && !preview) {
-            hide();
-            return false;
-        }
-        if (contentView == null) contentView = createBanner();
-        if (box.getChildCount() == 0) {
-            box.addView(contentView, new FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        }
-        box.setVisibility(View.VISIBLE);
-        applyLayout();
-        return true;
+        final boolean willShow = sdkReady() || preview;
+        onUi(() -> {
+            if (!willShow) { hideNow(); return; }
+            if (contentView == null) contentView = createBanner();
+            if (box.getChildCount() == 0) {
+                box.addView(contentView, new FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+            }
+            box.setVisibility(View.VISIBLE);
+            applyLayout();
+        });
+        return willShow;
     }
 
     void hide() {
         position = "";
+        onUi(this::hideNow);
+        // 真正接入 SDK 后，这里还要调用广告对象的 destroy()，否则会漏内存
+    }
+
+    /** 只在主线程里调用 */
+    private void hideNow() {
         box.setVisibility(View.GONE);
         applyLayout();
-        // 真正接入 SDK 后，这里还要调用广告对象的 destroy()，否则会漏内存
     }
 
     /** 预览开关：没接 SDK 时用来确认版式和让位是否合适 */
@@ -108,6 +136,7 @@ final class AdHost {
         if (!on && !sdkReady()) hide();
     }
 
+    /** 只在主线程里调用（applyLayout 会改 LayoutParams，进而 requestLayout） */
     private void applyLayout() {
         FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) box.getLayoutParams();
         int h = box.getVisibility() == View.VISIBLE ? dp(BANNER_DP) : 0;

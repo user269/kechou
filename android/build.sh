@@ -28,7 +28,7 @@ KS_PASS="${KS_PASS:-$(cat .keystore-pass 2>/dev/null || true)}"
 # 两条版本线各自独立更新（1.2 → update-1.2.json，1.3 → update.json）：
 #   1.3.x.x 带广告（主线）        bash build.sh
 #   1.2.x.x 无广告（维护线）       VERSION_NAME=1.2.0.0 WITH_ADS=0 bash build.sh
-VERSION_NAME="${VERSION_NAME:-1.3.0.1}"
+VERSION_NAME="${VERSION_NAME:-1.3.0.2}"
 # versionCode 由版本号推算：主*10000 + 次*1000 + 修订*100 + 构建。
 # 好处是同一台手机上「1.3 的任何版本」都大于「1.2 的任何版本」，判断升降级不会错。
 IFS='.' read -r V_MAJOR V_MINOR V_PATCH V_BUILD <<< "$VERSION_NAME"

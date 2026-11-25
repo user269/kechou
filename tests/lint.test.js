@@ -61,5 +61,25 @@ ok(lanCallSites.length > 0, '有局域网调用点', lanCallSites.length);
 const guardCount = (app.match(/hasLan\(\)/g) || []).length;
 ok(guardCount >= 3, '至少三处做了 hasLan 保护', guardCount);
 
+console.log('\n【7】广告位的视图操作必须在主线程');
+// @JavascriptInterface 由 WebView 在桥接线程调用，直接改 View 会抛
+// CalledFromWrongThreadException（线上表现：点「广告位预览」直接退出）
+const adHostSrc = fs.readFileSync(
+  path.join(ROOT, 'android/app/src/main/java/com/kebao/lessonpay/AdHost.java'), 'utf8');
+ok(/runOnUiThread/.test(adHostSrc), 'AdHost 通过 runOnUiThread 切主线程');
+const showBody = (/boolean show\(String pos\)[\s\S]*?\n    }/.exec(adHostSrc) || [''])[0];
+ok(/onUi\(/.test(showBody), 'show() 里改视图走 onUi', showBody.slice(0, 40));
+const hideBody = (/void hide\(\)[\s\S]*?\n    }/.exec(adHostSrc) || [''])[0];
+ok(/onUi\(/.test(hideBody), 'hide() 里改视图走 onUi', hideBody.slice(0, 40));
+
+const bridgeSrc = fs.readFileSync(
+  path.join(ROOT, 'android/app/src/main/java/com/kebao/lessonpay/WebBridge.java'), 'utf8');
+const adMethods = ['adShow', 'adHide', 'adPreview'];
+adMethods.forEach(m => {
+  const body = (new RegExp('public [\\w<>\\[\\]]+ ' + m + '\\([^)]*\\)[\\s\\S]*?\\n    }').exec(bridgeSrc) || [''])[0];
+  const direct = /setVisibility|addView|setLayoutParams|requestLayout/.test(body);
+  ok(!direct, 'WebBridge.' + m + ' 不直接操作视图', body.slice(0, 50));
+});
+
 console.log(`\n结果：${pass} 通过，${fail} 失败`);
 process.exit(fail ? 1 : 0);
